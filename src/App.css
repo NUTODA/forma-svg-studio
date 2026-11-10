@@ -28,6 +28,9 @@
 
 .app__left,
 .app__right {
+  /* Containing block for absolutely positioned descendants (visually-hidden live regions): without it they
+     escape the panel's overflow clipping and stretch the document far below the status bar. */
+  position: relative;
   min-width: 0;
   min-height: 0;
   background: var(--bg-panel);

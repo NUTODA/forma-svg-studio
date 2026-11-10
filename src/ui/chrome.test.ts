@@ -47,6 +47,8 @@ function makeApi(overrides: Partial<EditorApi> = {}, doc: DocState = createDoc()
   const api: EditorApi = {
     doc,
     selectedId: null,
+    briefBusy: false,
+    llmOn: false,
     canUndo: false,
     canRedo: false,
     files: FILES,

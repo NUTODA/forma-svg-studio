@@ -76,6 +76,10 @@ export interface EditorApi {
   setBriefText(text: string): void;
   /** Analyse the current brief text and compose. Returns false when nothing could be composed. */
   runBrief(): boolean;
+  /** True while the optional LLM is interpreting the title (rule-based result is the fallback). */
+  briefBusy: boolean;
+  /** True when the server has an LLM configured. */
+  llmOn: boolean;
   /** Apply an issue action from analysis feedback. */
   applyIssueAction(action: import('../../domain/types').IssueAction): void;
   applyDemo(id: string): void;

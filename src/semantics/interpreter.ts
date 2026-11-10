@@ -1,11 +1,10 @@
 /**
  * Plug-in boundary for title interpretation.
  *
- * The app ships only the deterministic `ruleInterpreter` and never calls the network. An optional
- * server-side LLM adapter would implement the same interface: send the title and the available
- * motif ids to a backend endpoint that holds the API key, validate the model's answer against the
- * `TitleAnalysis` shape (unknown or unavailable motifs dropped, reasons kept as plain text) and
- * fall back to `ruleInterpreter` on any error or timeout. Nothing else in the app would change.
+ * `ruleInterpreter` is the deterministic, offline baseline. The optional LLM path lives in `llm.ts`
+ * (client) and `server/` (holds the API key): it is asked only when the rules are unsure, its answer
+ * is reduced to available motif ids and merged into the same `TitleAnalysis`, and any error or
+ * timeout leaves the rule-based result in place.
  */
 import type { MotifId, TitleAnalysis } from '../domain/types';
 import { analyzeTitle, type AnalyzeOptions } from './analyzeTitle';

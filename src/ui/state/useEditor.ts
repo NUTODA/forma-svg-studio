@@ -10,6 +10,7 @@ import {
   recomposeDoc,
   withBackgroundObjects,
 } from '../../doc/doc';
+import { applyLlmPick, llmAvailable, needsLlm, requestLlmPick, type LlmPick } from '../../semantics/llm';
 import { canRedo, canUndo, createEditorState, editorReducer, type EditorState } from '../../doc/editor';
 import {
   backupDraft,
@@ -464,9 +465,14 @@ export function useEditor(): EditorApi {
   }, []);
 
   const composeBrief = useCallback(
-    (text: string, mode: BriefMode): boolean => {
+    (text: string, mode: BriefMode, pick?: LlmPick | null): boolean => {
       const base = currentDoc();
-      const { motifs, result } = analyseBrief(text, mode, available);
+      let { motifs, result } = analyseBrief(text, mode, available);
+      if (pick && result.mode === 'title') {
+        const analysis = applyLlmPick(result.analysis, pick);
+        result = { mode: 'title', analysis };
+        motifs = analysis.selected;
+      }
       setBrief(result);
       if (motifs.length === 0) {
         if (base.brief.text !== text || base.brief.mode !== mode) {
@@ -490,10 +496,34 @@ export function useEditor(): EditorApi {
     [announce, currentDoc, replaceDoc],
   );
 
+  /* Optional LLM interpretation of titles (server-side key); the rule-based result is the fallback. */
+  const [llmOn, setLlmOn] = useState(false);
+  const [briefBusy, setBriefBusy] = useState(false);
+  const runToken = useRef(0);
+  useEffect(() => {
+    let alive = true;
+    void llmAvailable().then((on) => alive && setLlmOn(on));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const runBrief = useCallback((): boolean => {
     const { text, mode } = currentDoc().brief;
-    return composeBrief(text, mode);
-  }, [composeBrief, currentDoc]);
+    const token = ++runToken.current;
+    const rules = mode === 'title' && llmOn ? analyseBrief(text, mode, available).result : null;
+    if (rules === null || rules.mode !== 'title' || !needsLlm(rules.analysis)) {
+      setBriefBusy(false);
+      return composeBrief(text, mode);
+    }
+    setBriefBusy(true);
+    void requestLlmPick(text, available).then((pick) => {
+      if (token !== runToken.current) return; // a newer run or a reset superseded this one
+      setBriefBusy(false);
+      composeBrief(text, mode, pick);
+    });
+    return true;
+  }, [composeBrief, currentDoc, llmOn]);
 
   const addMotif = useCallback(
     (motif: MotifId, at?: { x: number; y: number }) => {
@@ -814,6 +844,8 @@ export function useEditor(): EditorApi {
     if (superseded) otherTabAhead.current = true;
     // Starting anew is the explicit choice to drop an unreadable draft that could not be copied.
     draftHeld.current = false;
+    runToken.current += 1; // drop any pending LLM answer
+    setBriefBusy(false);
     dispatch({ type: 'load', doc: createDoc() });
     setBrief(null);
     if (superseded) announce(OTHER_TAB_NEW, 'warning');
@@ -895,6 +927,8 @@ export function useEditor(): EditorApi {
       setBriefMode,
       setBriefText,
       runBrief,
+      briefBusy,
+      llmOn,
       applyIssueAction,
       applyDemo,
       addMotif,
@@ -943,6 +977,8 @@ export function useEditor(): EditorApi {
       setBriefMode,
       setBriefText,
       runBrief,
+      briefBusy,
+      llmOn,
       applyIssueAction,
       applyDemo,
       addMotif,

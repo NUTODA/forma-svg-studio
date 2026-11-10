@@ -143,9 +143,9 @@ export function BriefPanel(): JSX.Element {
           </div>
         </div>
 
-        <button type="button" className="btn btn--primary btn--block brief__run" disabled={blank} onClick={run}>
+        <button type="button" className="btn btn--primary btn--block brief__run" disabled={blank || api.briefBusy} aria-busy={api.briefBusy || undefined} onClick={run}>
           <IconSparkle />
-          <span className="brief__run-label">Собрать композицию</span>
+          <span className="brief__run-label">{api.briefBusy ? 'Подбираем объекты…' : 'Собрать композицию'}</span>
           <kbd className="kbd brief__kbd" aria-hidden="true">
             {runShortcutHint(mac)}
           </kbd>
