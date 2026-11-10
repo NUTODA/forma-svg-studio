@@ -86,7 +86,6 @@ describe('analyzeTitle', () => {
     ['Эффект домино', 'puzzle'],
     ['Учиться слышать себя', 'headphones'],
     ['О пользе наушников', 'headphones'],
-    ['Как накопить на поездку', 'coin'],
     ['Подарок маме на 8 марта', 'bouquet'],
   ] as const)('a one-object reading of «%s» keeps %s as the hero and gets a companion', (title, hero) => {
     const result = analyzeTitle(title, ALL);
@@ -133,6 +132,14 @@ describe('analyzeTitle', () => {
       expect(r.selected.length).toBeGreaterThanOrEqual(2);
       expect(r.fallbackUsed).toBe(false);
     }
+  });
+
+  it('gives every idea of the headline its own object', () => {
+    const trip = analyzeTitle('Как копить на поездки', ALL).selected;
+    expect(trip.slice(0, 2)).toEqual(['coin', 'wallet']);
+    expect(trip).toContain('phone');
+    // One idea stays one topic: the money headline does not pull in unrelated objects.
+    expect(analyzeTitle('Финансовая грамотность: как копить с первой зарплаты', ALL).selected).toEqual(['coin', 'wallet']);
   });
 
   it('is honest about a weak match', () => {

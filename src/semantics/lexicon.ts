@@ -258,7 +258,8 @@ export const THEMES: Theme[] = [
     id: 'leisure',
     label: 'Отдых и дорога',
     keys: `отпуск, путешествие, путешествовать, поездка, дорога, поезд, перелет, каникулы, выходные, отдых`,
-    motifs: { headphones: 0.6, book: 0.6, phone: 0.4 },
+    // A trip is tickets and maps in the phone first, then music and a book for the road.
+    motifs: { phone: 0.7, headphones: 0.6, book: 0.4 },
   },
 ];
 

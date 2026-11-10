@@ -380,6 +380,20 @@ export function analyzeTitle(
         }
       }
     }
+    // Every idea of the headline gets its own object: «копить на поездку» is money AND a trip. A topic found in
+    // the title that no selected object speaks for adds its best object (strongest affinity, then match order).
+    const coveredBy = (themeId: string): boolean =>
+      selected.some((id) => (THEME_BY_ID.get(themeId)?.motifs[id] ?? 0) > 0);
+    const topics = [...themeScore.entries()].filter(([, score]) => score >= THEME_REPORT_AT).sort((a, b) => b[1] - a[1]);
+    for (const [themeId] of topics) {
+      if (selected.length >= max) break;
+      if (coveredBy(themeId)) continue;
+      const order = new Map(matches.map((m, i) => [m.motif, i]));
+      const best = (Object.entries(THEME_BY_ID.get(themeId)?.motifs ?? {}) as [MotifId, number][])
+        .filter(([id, affinity]) => affinity > 0 && available.has(id) && !excludedSet.has(id) && !selected.includes(id))
+        .sort((a, b) => b[1] - a[1] || (order.get(a[0]) ?? 99) - (order.get(b[0]) ?? 99))[0];
+      if (best) selected.push(best[0]);
+    }
   } else {
     const neutral = FALLBACK_ORDER.find((id) => available.has(id)) ?? MOTIF_IDS.find((id) => available.has(id));
     if (neutral !== undefined) {
