@@ -108,7 +108,13 @@
 
 .palette-import__file {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
+}
+
+.palette-import__file-error {
+  margin: 0;
+  align-items: flex-start;
 }
 
 .palette-import__live .notice {
@@ -245,6 +251,16 @@
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   max-width: 100%;
+  overflow-x: auto;
+}
+
+.palette-import details > summary {
+  cursor: pointer;
+  margin-bottom: var(--sp-2);
+}
+
+.palette-import details[open] > .palette-import__scroll + .palette-import__scroll {
+  margin-top: var(--sp-2);
 }
 
 .palette-import__table {
@@ -309,5 +325,20 @@
 
   .palette-import__foot .btn {
     flex: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .palette-import button,
+  .palette-import details > summary {
+    min-height: 44px;
+  }
+
+  .palette-import details > summary {
+    padding-block: 12px;
+  }
+
+  .palette-import__head .icon-btn {
+    min-width: 44px;
   }
 }

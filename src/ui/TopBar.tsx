@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { nothingToExportReason } from '../export/render';
 import { ARTBOARD_PRESETS } from '../layout/compose';
 import { detectMac, modShortcut, shiftKeyLabel } from './chromeKeys';
 import { IconCopy, IconDownload, IconPlus, IconRedo, IconUndo } from './icons';
@@ -111,7 +112,9 @@ export function TopBar(): JSX.Element {
 
   const title = documentTitle(doc.headline);
   const presetLabel = ARTBOARD_PRESETS[doc.preset]?.label ?? '';
-  const empty = doc.layers.length === 0;
+  // The buttons and the export shortcut share one rule: a file that would be only paper is not offered.
+  const nothingToExport = nothingToExportReason(doc, { files: api.files, planes: api.planes, palette: api.palette });
+  const empty = nothingToExport !== null;
   const undoLabel = `Отменить (${modShortcut(mac, 'Z')})`;
   const redoLabel = `Повторить (${modShortcut(mac, shiftKeyLabel(mac), 'Z')})`;
   const exportShortcut = modShortcut(mac, 'E');
@@ -175,7 +178,7 @@ export function TopBar(): JSX.Element {
           className="btn btn--ghost topbar__btn"
           disabled={empty}
           aria-busy={copying}
-          title={empty ? 'Холст пуст — копировать нечего' : 'Скопировать SVG в буфер обмена'}
+          title={empty ? `${nothingToExport} — копировать нечего` : 'Скопировать SVG в буфер обмена'}
           onClick={() => void run(copying, setCopying, () => api.copySvg(),'Не удалось скопировать SVG')}
         >
           <IconCopy />
@@ -186,7 +189,7 @@ export function TopBar(): JSX.Element {
           className="btn btn--primary topbar__btn"
           disabled={empty}
           aria-busy={exporting}
-          title={empty ? 'Холст пуст — экспортировать нечего' : `Скачать SVG (${exportShortcut})`}
+          title={empty ? `${nothingToExport} — экспортировать нечего` : `Скачать SVG (${exportShortcut})`}
           onClick={() => void run(exporting, setExporting, () => api.exportSvg(),'Не удалось экспортировать SVG')}
         >
           <IconDownload />

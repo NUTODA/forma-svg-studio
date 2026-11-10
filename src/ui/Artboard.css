@@ -269,3 +269,15 @@
     opacity: 0.8;
   }
 }
+
+/*
+ * Touch: the rotation handle's transparent hit disc doubles to 44px around the same centre, still 2px
+ * clear of the frame (offset 24 − radius 22). The visible 10px dot is unchanged.
+ */
+@media (pointer: coarse) {
+  .artboard__rotate-hit {
+    transform: scale(2);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+}

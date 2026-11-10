@@ -1,5 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, JSX } from 'react';
+import {
+  MAX_CUSTOM_PALETTES,
+  paletteIdTakenMessage,
+  paletteLimitMessage,
+  paletteLimitReachedMessage,
+} from '../doc/persist';
 import { PAINT_ROLES } from '../domain/types';
 import { PALETTE_MAX_BYTES, PALETTE_SCHEMA_ID, paletteTemplateJson, validatePaletteJson } from '../palette/validate';
 import type { PaletteValidation } from '../palette/validate';
@@ -37,21 +43,27 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
   const titleId = useId();
   const hintId = useId();
   const feedbackId = useId();
+  const limitId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const templateRef = useRef<HTMLPreElement>(null);
   const downOnBackdrop = useRef(false);
+  const fileRead = useRef(0);
 
   const [text, setText] = useState('');
   const [checkedText, setCheckedText] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [alertOn, setAlertOn] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const takenIds = useMemo(() => new Set(api.palettes.map((p) => p.id)), [api.palettes]);
+  // Told up front instead of after the user has prepared a palette; the editor refuses past the limit as well.
+  const atLimit = useMemo(() => api.palettes.filter((p) => !p.builtIn).length >= MAX_CUSTOM_PALETTES, [api.palettes]);
   const template = useMemo(() => paletteTemplateJson(), []);
 
   useEffect(() => {
@@ -76,35 +88,50 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
   }, [attempt]);
 
   const result: PaletteValidation | null = useMemo(
-    () => (checkedText.trim() === '' && attempt === 0 ? null : validatePaletteJson(checkedText, takenIds)),
-    [checkedText, takenIds, attempt],
+    () => (checkedText.trim() === '' && !alertOn ? null : validatePaletteJson(checkedText, takenIds)),
+    [checkedText, takenIds, alertOn],
   );
   const stale = checkedText !== text;
   const showErrors = result !== null && !result.ok;
 
   const edit = (value: string): void => {
+    fileRead.current += 1;
+    setReading(false);
+    setFileError(null);
+    setNote(null);
     setText(value);
     setAlertOn(false);
   };
 
-  const loadFile = (event: ChangeEvent<HTMLInputElement>): void => {
+  const loadFile = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    const request = ++fileRead.current;
+    setAlertOn(false);
+    setNote(null);
     if (isFileTooLarge(file.size, PALETTE_MAX_BYTES)) {
-      setNote({ tone: 'error', text: fileTooLargeMessage(file.size, PALETTE_MAX_BYTES) });
+      setReading(false);
+      setFileError(fileTooLargeMessage(file.size, PALETTE_MAX_BYTES));
       return;
     }
-    file
-      .text()
-      .then((content) => {
-        setText(content);
-        setCheckedText(content);
-        setAlertOn(false);
-        setNote({ tone: 'success', text: `Файл «${file.name}» загружен` });
-        textareaRef.current?.focus();
-      })
-      .catch(() => setNote({ tone: 'error', text: 'Не удалось прочитать файл' }));
+    setReading(true);
+    setFileError(null);
+    try {
+      const content = await file.text();
+      if (request !== fileRead.current) return;
+      if (content.trim() === '') {
+        setFileError('Файл палитры пуст. Выберите другой файл или вставьте JSON.');
+        return;
+      }
+      setText(content);
+      setCheckedText(content);
+      textareaRef.current?.focus();
+    } catch {
+      if (request === fileRead.current) setFileError('Не удалось прочитать файл');
+    } finally {
+      if (request === fileRead.current) setReading(false);
+    }
   };
 
   const copyTemplate = async (): Promise<void> => {
@@ -142,6 +169,7 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
   };
 
   const submit = (): void => {
+    if (reading || atLimit || (fileError && text.trim() === '')) return;
     const validation = validatePaletteJson(text, takenIds);
     setCheckedText(text);
     if (!validation.ok) {
@@ -150,12 +178,26 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
       return;
     }
     const { palette } = validation;
-    api.addCustomPalette(palette);
+    // The editor announces the one outcome (saved, or only for this tab when storage refuses); don't announce over it.
+    const change = api.addCustomPalette(palette);
+    if (change !== 'saved' && change !== 'session') {
+      // Refused: the status line behind the modal says so too, but the user is looking here. After `id-taken` the
+      // editor's list already holds the newcomer, so the preview below shows the free id the retry will use.
+      setNote({
+        tone: 'error',
+        text:
+          change === 'limit'
+            ? paletteLimitMessage()
+            : change === 'id-taken'
+              ? paletteIdTakenMessage(palette.id)
+              : 'Палитра не добавлена. Проверьте предпросмотр и нажмите «Добавить палитру» ещё раз.',
+      });
+      return;
+    }
     api.setPalette(palette.id);
     // Close the modal first; its `close` event calls onClose, which can then return focus to the opener
     // (focusing while the modal is still open is a no-op because the page behind it is inert).
     dialogRef.current?.close();
-    api.announce(`Палитра «${palette.name}» добавлена`, 'success');
   };
 
   return (
@@ -189,6 +231,12 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
 
         <div className="palette-import__body">
           <div className="palette-import__main">
+            {atLimit ? (
+              <p id={limitId} className="notice notice--warning">
+                <IconAlert />
+                <span>{paletteLimitReachedMessage()}</span>
+              </p>
+            ) : null}
             <div className="field">
               <label className="field__label" htmlFor={`${titleId}-json`}>
                 JSON палитры
@@ -204,7 +252,7 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
                 placeholder={PLACEHOLDER}
                 value={text}
                 aria-invalid={showErrors && !stale}
-                aria-describedby={`${hintId} ${feedbackId}`}
+                aria-describedby={`${atLimit ? `${limitId} ` : ''}${hintId} ${feedbackId}`}
                 onChange={(event) => edit(event.target.value)}
               />
               <p id={hintId} className="field__hint">
@@ -221,16 +269,25 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
                 accept=".json,application/json"
                 tabIndex={-1}
                 aria-label="Файл палитры JSON"
-                onChange={loadFile}
+                onChange={(event) => void loadFile(event)}
               />
               <button type="button" className="btn btn--sm" onClick={() => fileRef.current?.click()}>
                 <IconUpload />
                 Загрузить файл…
               </button>
+              <button type="button" className="btn btn--sm btn--ghost" onClick={insertTemplate}>
+                {text.trim() ? 'Заменить шаблоном' : 'Подставить шаблон'}
+              </button>
             </div>
 
+            {fileError ? (
+              <p role="alert" className="notice notice--error palette-import__file-error">
+                <IconAlert />
+                <span>{fileError}</span>
+              </p>
+            ) : null}
             <div className="palette-import__live" role="status" aria-live="polite">
-              {note ? (
+              {reading ? 'Читаем файл…' : note ? (
                 <p className={`notice notice--${note.tone}`}>
                   {note.tone === 'error' ? <IconAlert /> : note.tone === 'success' ? <IconCheck /> : <IconInfo />}
                   <span>{note.text}</span>
@@ -239,7 +296,7 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
             </div>
 
             <div id={feedbackId} className={`palette-import__feedback${stale ? ' is-stale' : ''}`} aria-busy={stale}>
-              {result && !result.ok ? (
+              {result && !result.ok && !stale ? (
                 <div
                   key={attempt}
                   ref={summaryRef}
@@ -263,7 +320,7 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
                 </div>
               ) : null}
 
-              {result && result.ok ? (
+              {result && result.ok && !stale ? (
                 <div className="palette-import__preview">
                   <div className="palette-import__preview-head">
                     <span className="chip chip--ok">
@@ -309,10 +366,8 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
           </div>
 
           <div className="palette-import__ref">
-            <section aria-labelledby={`${titleId}-schema`} className="palette-import__section">
-              <h3 id={`${titleId}-schema`} className="label-caps">
-                Схема
-              </h3>
+            <details className="palette-import__section">
+              <summary className="label-caps">Схема палитры</summary>
               <div className="palette-import__scroll scroll" role="region" aria-label="Поля файла палитры" tabIndex={0}>
                 <table className="palette-import__table">
                   <caption className="visually-hidden">Поля верхнего уровня</caption>
@@ -365,7 +420,7 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
                         <code>colors</code>
                       </th>
                       <td>да</td>
-                      <td>Объект с цветами ролей в&nbsp;формате <code>#RRGGBB</code>.</td>
+                      <td>Объект с цветами ролей в&nbsp;формате <code>#RRGGBB</code> или <code>#RGB</code>.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -400,7 +455,7 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
                   </tbody>
                 </table>
               </div>
-            </section>
+            </details>
 
             <section aria-labelledby={`${titleId}-template`} className="palette-import__section">
               <h3 id={`${titleId}-template`} className="label-caps">
@@ -423,9 +478,6 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
                   <IconDownload />
                   Скачать шаблон
                 </button>
-                <button type="button" className="btn btn--sm btn--ghost" onClick={insertTemplate}>
-                  Подставить в&nbsp;поле
-                </button>
               </div>
             </section>
           </div>
@@ -435,7 +487,12 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
           <button type="button" className="btn" onClick={() => dialogRef.current?.close()}>
             Отмена
           </button>
-          <button type="button" className="btn btn--primary" onClick={submit}>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={submit}
+            disabled={reading || atLimit || Boolean(fileError && !text.trim())}
+          >
             Добавить палитру
           </button>
         </footer>

@@ -27,6 +27,7 @@ export function LayersPanel(): JSX.Element {
   const titleId = useId();
   const helpId = useId();
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const listRef = useRef<HTMLUListElement>(null);
   const refocusRef = useRef(false);
 
   const order = displayOrder(api.doc.layers);
@@ -41,8 +42,16 @@ export function LayersPanel(): JSX.Element {
     if (id) rowRefs.current.get(id)?.focus();
   });
 
+  // Keep the selected row visible by scrolling the list itself. `scrollIntoView` would also scroll every
+  // ancestor, and on the stacked phone/tablet layout a canvas selection would then throw the page off the canvas.
   useEffect(() => {
-    if (api.selectedId) rowRefs.current.get(api.selectedId)?.scrollIntoView?.({ block: 'nearest' });
+    const list = listRef.current;
+    const row = api.selectedId ? rowRefs.current.get(api.selectedId) : undefined;
+    if (!list || !row) return;
+    const listBox = list.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
+    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
   }, [api.selectedId]);
 
   const nameOf = (layer: Layer): string => MOTIFS[layer.motif]?.name ?? layer.motif;
@@ -108,7 +117,7 @@ export function LayersPanel(): JSX.Element {
           <p id={helpId} className="visually-hidden">
             Стрелки — выбор слоя. Alt и стрелки — порядок. Пробел — показать или скрыть. Delete — удалить.
           </p>
-          <ul className="layers__list scroll" role="list" aria-labelledby={titleId} aria-describedby={helpId}>
+          <ul ref={listRef} className="layers__list scroll" role="list" aria-labelledby={titleId} aria-describedby={helpId}>
             {order.map((layer, index) => {
               const selected = layer.id === api.selectedId;
               const name = nameOf(layer);

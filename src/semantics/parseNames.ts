@@ -28,52 +28,89 @@ const NUMBER_WORDS: Record<string, number> = {
 const q = (text: string): string => `„${text}“`;
 const name = (id: MotifId): string => MOTIFS[id].name;
 
+/** Piece of the input between separators, trimmed; `start` is its offset in the input. */
+interface Fragment {
+  text: string;
+  start: number;
+}
+
+/**
+ * Enumeration in front of a name: «1) книга», «2: монета», «(3) лампа», «[4] ручка», «5- книга», «#6 лампа»,
+ * «а) книга». A number is a list index only when punctuation follows it; «2 монеты» stays a quantity.
+ * The trailing alternative drops what a «1.)» list leaves behind once «.» has split the fragment.
+ */
+const LIST_MARKER =
+  /^(?:[([]\s*(?:\d{1,3}|\p{L})\s*[)\]]|(?:\d{1,3}|\p{L})\s*[)\]]|\d{1,3}\s*[:–—-]+(?=\s)|[#№]\s*\d{1,3}(?![\p{L}\p{N}])|[)\]]+)\s*/u;
+
+function splitFragments(input: string): Fragment[] {
+  const fragments: Fragment[] = [];
+  const add = (from: number, to: number): void => {
+    const raw = input.slice(from, to);
+    const text = raw.trim();
+    if (!/[\p{L}\p{N}]/u.test(text)) return;
+    const start = from + raw.length - raw.trimStart().length;
+    const marker = LIST_MARKER.exec(text)?.[0] ?? '';
+    const rest = text.slice(marker.length);
+    if (/[\p{L}\p{N}]/u.test(rest)) fragments.push({ text: rest, start: start + marker.length });
+  };
+  let from = 0;
+  for (const match of input.matchAll(SEPARATORS)) {
+    const at = match.index ?? 0;
+    add(from, at);
+    from = at + match[0].length;
+  }
+  add(from, input.length);
+  return fragments;
+}
+
 interface Quantity {
   text: string;
+  /** Where `text` starts in the fragment it was cut from. */
+  offset: number;
   /** Number the user wrote (may be out of range); undefined when none. */
   requested?: number;
 }
 
-/** «3 монеты», «3х монеты», «монета ×2», «монета 2 шт», «две монеты», «монета 2». */
+/** «3 монеты», «3х монеты», «монета ×2», «монета 2 шт», «две монеты», «монета 2». `fragment` must be trimmed. */
 function extractQuantity(fragment: string): Quantity {
-  const text = fragment.trim();
-  const trailing = /^(.*?)[\s(]*(?:[x×*х]\s*(\d+)|(\d+)\s*(?:шт\.?|штук[аи]?|[x×*х]))\)?$/iu.exec(text);
+  const prefix = (kept: string, requested: number): Quantity => ({ text: kept.trim(), offset: 0, requested });
+  const suffix = (kept: string, requested: number): Quantity => {
+    const text = kept.trim();
+    return { text, offset: fragment.length - text.length, requested };
+  };
+  const trailing = /^(.*?)[\s(]*(?:[x×*х]\s*(\d+)|(\d+)\s*(?:шт\.?|штук[аи]?|[x×*х]))\)?$/iu.exec(fragment);
   if (trailing?.[1] !== undefined && /\p{L}/u.test(trailing[1])) {
-    return { text: trailing[1].trim(), requested: Number(trailing[2] ?? trailing[3]) };
+    return prefix(trailing[1], Number(trailing[2] ?? trailing[3]));
   }
-  const leading = /^(\d+)\s*(?:шт\.?|штук[аи]?|[x×*х])?\s*(.+)$/iu.exec(text);
+  const leading = /^(\d+)\s*(?:шт\.?|штук[аи]?|[x×*х])?\s*(.+)$/iu.exec(fragment);
   if (leading?.[2] !== undefined && /\p{L}/u.test(leading[2])) {
-    return { text: leading[2].trim(), requested: Number(leading[1]) };
+    return suffix(leading[2], Number(leading[1]));
   }
-  const word = /^(\p{L}+)\s+(.+)$/u.exec(text);
+  const word = /^(\p{L}+)\s+(.+)$/u.exec(fragment);
   const wordValue = word?.[1] === undefined ? undefined : NUMBER_WORDS[word[1].toLowerCase().replace(/ё/g, 'е')];
   if (word?.[2] !== undefined && wordValue !== undefined) {
-    return { text: word[2].trim(), requested: wordValue };
+    return suffix(word[2], wordValue);
   }
-  const bare = /^(.*\p{L})\s+(\d)$/u.exec(text);
+  const bare = /^(.*\p{L})\s+(\d)$/u.exec(fragment);
   if (bare?.[1] !== undefined && bare[2] !== undefined && Number(bare[2]) >= 1 && Number(bare[2]) <= MAX_COUNT) {
-    return { text: bare[1].trim(), requested: Number(bare[2]) };
+    return prefix(bare[1], Number(bare[2]));
   }
-  return { text };
+  return { text: fragment, offset: 0 };
 }
 
-function splitFragments(input: string): string[] {
-  return input
-    .split(SEPARATORS)
-    .map((part) => part.trim())
-    .filter((part) => /[\p{L}\p{N}]/u.test(part));
-}
-
-function sourceSlice(text: string, tokens: readonly Token[], from: number, to: number): string {
+/** Source text of tokens `from..to` and where it starts; the whole text when a token is missing. */
+function tokenSpan(text: string, tokens: readonly Token[], from: number, to: number): { raw: string; offset: number } {
   const a = tokens[from];
   const b = tokens[to];
-  return a === undefined || b === undefined ? text : text.slice(a.start, b.end);
+  return a === undefined || b === undefined ? { raw: text, offset: 0 } : { raw: text.slice(a.start, b.end), offset: a.start };
 }
 
 interface Resolved {
   entry: Omit<NameEntry, 'count'>;
   /** Fragment word that produced the entry (for the replace action). */
   token: string;
+  /** Where `token` starts in the text that was resolved. */
+  offset: number;
   /** How many times the name occurs in the fragment («телефон телефон» → 2). */
   occurrences?: number;
 }
@@ -88,9 +125,10 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
     const seen = new Set<MotifId>();
     const distinct = spans.filter((s) => (seen.has(s.motif) ? false : (seen.add(s.motif), true)));
     return distinct.map((span) => {
-      const raw = distinct.length === 1 ? text : sourceSlice(text, tokens, span.from, span.to);
+      const { raw, offset } = distinct.length === 1 ? { raw: text, offset: 0 } : tokenSpan(text, tokens, span.from, span.to);
       return {
         token: raw,
+        offset,
         occurrences: spans.filter((s) => s.motif === span.motif).length,
         entry: {
           raw,
@@ -109,9 +147,10 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
   }
   if (typos.size > 0) {
     return [...typos].map(([motif, token]) => {
-      const raw = typos.size === 1 ? text : token.raw;
+      const { raw, offset } = typos.size === 1 ? { raw: text, offset: 0 } : { raw: token.raw, offset: token.start };
       return {
         token: raw,
+        offset,
         entry: {
           raw,
           status: available.has(motif) ? 'weak' : 'unavailable',
@@ -131,6 +170,7 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
       return [
         {
           token: text,
+          offset: 0,
           entry: {
             raw: text,
             status: available.has(guess.motif) ? 'weak' : 'unavailable',
@@ -141,9 +181,9 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
         },
       ];
     }
-    return [{ token: text, entry: { raw: text, status: 'unmatched', suggestion: guess.motif } }];
+    return [{ token: text, offset: 0, entry: { raw: text, status: 'unmatched', suggestion: guess.motif } }];
   }
-  return [{ token: text, entry: { raw: text, status: 'unmatched' } }];
+  return [{ token: text, offset: 0, entry: { raw: text, status: 'unmatched' } }];
 }
 
 function availableList(available: ReadonlySet<MotifId>): string {
@@ -169,18 +209,19 @@ export function parseNames(input: string, available: ReadonlySet<MotifId>): Name
   const entries: NameEntry[] = [];
   const clamped: string[] = [];
   for (const fragment of fragments) {
-    const quantity = extractQuantity(fragment);
+    const quantity = extractQuantity(fragment.text);
     const resolved = resolveFragment(quantity.text, available);
     const requested = quantity.requested;
     const single = resolved.length === 1;
-    for (const { entry, token, occurrences = 1 } of resolved) {
+    for (const { entry, token, offset, occurrences = 1 } of resolved) {
       let count = Math.min(MAX_COUNT, occurrences);
       if (single && requested !== undefined) {
         count = Math.min(MAX_COUNT, Math.max(1, requested));
         if (requested < 1 || requested > MAX_COUNT) clamped.push(entry.raw);
       }
       entries.push({ ...entry, count });
-      collectEntryIssues(entry, token, available, issues);
+      const start = fragment.start + quantity.offset + offset;
+      collectEntryIssues(entry, { text: token, start }, available, issues);
     }
     if (resolved.length > 1 || resolved.some((r) => (r.occurrences ?? 1) > 1)) {
       issues.push({
@@ -241,13 +282,16 @@ export function parseNames(input: string, available: ReadonlySet<MotifId>): Name
   return { input, entries, motifs, issues };
 }
 
+/** `at` is the word the issue is about and its offset in the input: the replace action edits exactly that spot. */
 function collectEntryIssues(
   entry: Omit<NameEntry, 'count'>,
-  token: string,
+  at: { text: string; start: number },
   available: ReadonlySet<MotifId>,
   issues: InputIssue[],
 ): void {
   const { motif, suggestion } = entry;
+  const token = at.text;
+  const range = { start: at.start, end: at.start + token.length };
   switch (entry.status) {
     case 'unavailable':
       if (motif !== undefined) {
@@ -270,6 +314,7 @@ function collectEntryIssues(
             motif,
             token,
             replacement: name(motif),
+            range,
           },
         });
       }
@@ -286,6 +331,7 @@ function collectEntryIssues(
             motif: suggestion,
             token,
             replacement: name(suggestion),
+            range,
           },
         });
       } else {

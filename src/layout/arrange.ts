@@ -166,6 +166,37 @@ function tierGroups(dims: readonly Dim[], tiers: 2 | 3): number[][][] {
   return result;
 }
 
+/** Lift between neighbouring tiers of a dense arrangement, as a share of the item's own height. */
+const DENSE_TIER_STEP = 0.7;
+
+/**
+ * Compact family for big collections: equal-count tiers (largest drawings at the back), one arrangement per
+ * tier count up to ~3·√n. `candidateArrangements` grows with n³ (three-tier cuts), this one with n·√n.
+ */
+export function denseArrangements(dims: readonly Dim[]): Arrangement[] {
+  const n = dims.length;
+  const order = groundOrder(n);
+  const byArea = dims
+    .map((d) => d.index)
+    .sort((a, b) => {
+      const da = dims[a] as Dim;
+      const db = dims[b] as Dim;
+      return db.w * db.h - da.w * da.h || a - b;
+    });
+  const result: Arrangement[] = [singleRow(dims, order)];
+  const maxTiers = Math.min(n, Math.ceil(3 * Math.sqrt(n)));
+  for (let tiers = 2; tiers <= maxTiers; tiers += 1) {
+    const groups: number[][] = [];
+    const lifts: number[] = [];
+    for (let t = 0; t < tiers; t += 1) {
+      groups.push(byArea.slice(Math.floor((t * n) / tiers), Math.floor(((t + 1) * n) / tiers)));
+      lifts.push((tiers - 1 - t) * DENSE_TIER_STEP);
+    }
+    result.push(tiered(dims, order, groups, lifts));
+  }
+  return result;
+}
+
 /** All candidate arrangements; `allowColumn` adds the staggered column for tall zones. */
 export function candidateArrangements(dims: readonly Dim[], allowColumn: boolean): Arrangement[] {
   const order = groundOrder(dims.length);

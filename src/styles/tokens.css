@@ -430,6 +430,18 @@ p {
   border-color: var(--err-600);
 }
 
+/*
+ * iOS Safari zooms the page when a field under 16px takes focus and does not zoom back out. Touch screens
+ * get 16px field text; the viewport's own zoom stays untouched. The element qualifier outranks the single-class
+ * sizes of `.input--num` and `.palette-import__json` whichever stylesheet loads last.
+ */
+@media (pointer: coarse) {
+  input.input,
+  textarea.textarea {
+    font-size: max(var(--fs-16), 16px);
+  }
+}
+
 /* Chips / badges */
 .chip {
   display: inline-flex;

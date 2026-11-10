@@ -12,6 +12,22 @@ export function replaceFirstOccurrence(text: string, token: string, replacement:
   return text.slice(0, index) + replacement + text.slice(index + token.length);
 }
 
+/**
+ * Replace the occurrence of `token` an issue was raised for: the one at `range` while the text still holds
+ * `token` exactly there, so the fragment the user clicked is the one corrected; otherwise the first occurrence.
+ */
+export function replaceToken(
+  text: string,
+  token: string,
+  replacement: string,
+  range?: { start: number; end: number },
+): string {
+  if (token && range && range.start >= 0 && text.slice(range.start, range.end) === token) {
+    return text.slice(0, range.start) + replacement + text.slice(range.end);
+  }
+  return replaceFirstOccurrence(text, token, replacement);
+}
+
 /** Normalise an angle in degrees to the range (−180, 180]. */
 export function normalizeAngle(deg: number): number {
   const wrapped = ((deg % 360) + 360) % 360;

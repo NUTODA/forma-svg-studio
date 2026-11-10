@@ -36,6 +36,19 @@ export function isNumeric(word: string): boolean {
 }
 
 /**
+ * `replacement` written the way `original` was: «Ламба» → «Лампа», «ЛАМБА» → «ЛАМПА», «ламба» → «лампа».
+ * A correction must not drop the capital of a sentence's first word, nor add one in the middle of it.
+ */
+export function matchCase(original: string, replacement: string): string {
+  const letters = [...original].filter((ch) => ch.toLowerCase() !== ch.toUpperCase());
+  const first = letters[0];
+  if (first === undefined || first === first.toLowerCase()) return replacement;
+  if (letters.length > 1 && letters.every((ch) => ch === ch.toUpperCase())) return replacement.toUpperCase();
+  const [head = '', ...rest] = [...replacement];
+  return head.toUpperCase() + rest.join('');
+}
+
+/**
  * Split text into words. Hyphenated words become separate tokens («онлайн-курс»);
  * ordinal suffixes after a number are dropped («8-го марта» → «8», «марта»).
  */

@@ -37,6 +37,14 @@ export type BriefResult =
 
 export type ReorderTarget = 'up' | 'down' | 'top' | 'bottom' | number;
 
+/**
+ * How a custom palette change ended: `saved` to the browser, applied only for this tab (`session`:
+ * storage refused, the editor keeps working from memory) or not applied at all. Of the refusals, `limit`
+ * is a full list, `id-taken` an id another tab took after the palette was validated (the list now
+ * contains it, so validating again gives a free id) and `rejected` anything else.
+ */
+export type PaletteChange = 'saved' | 'session' | 'rejected' | 'limit' | 'id-taken';
+
 export interface EditorApi {
   /* ---- state ---- */
   doc: DocState;
@@ -103,8 +111,9 @@ export interface EditorApi {
   recompose(): void;
 
   /* ---- palettes ---- */
-  addCustomPalette(palette: Palette): void;
-  removeCustomPalette(id: string): void;
+  /** Both announce the one outcome themselves (including session-only); callers must not announce over it. */
+  addCustomPalette(palette: Palette): PaletteChange;
+  removeCustomPalette(id: string): PaletteChange;
 
   /* ---- assets / output ---- */
   /** Ask for templates to be loaded (thumbnails, artboard). Safe to call repeatedly. */

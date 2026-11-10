@@ -8,7 +8,7 @@ import type {
   PlacedLayer,
   Size,
 } from '../domain/types';
-import { candidateArrangements, makeDims } from './arrange';
+import { candidateArrangements, denseArrangements, makeDims } from './arrange';
 import type { Arrangement, Dim } from './arrange';
 import { placeEcho } from './echoes';
 import { boxBottom, boxRight, layerBounds, uncoveredFraction, unionBox, visibleAxes } from './geometry';
@@ -43,6 +43,22 @@ const HERO_FREE = 0.6;
  */
 const MIN_UNCOVERED = 0.55;
 const OCCLUSION_POWER = 3;
+/**
+ * Up to this many objects every arrangement is tried and scored against occlusion (the default brief has 1–8).
+ * Beyond it the search would grow with n³ candidates × n² overlap samples (seconds for ~100 layers), so a
+ * small deterministic family of tiered arrangements is scored by scale alone and the hero is lifted on top.
+ */
+const EXHAUSTIVE_MAX_ITEMS = 16;
+
+export interface ComposeOptions {
+  /** Item index each background sits behind (parallel to `backgrounds`); default: first unmatched item of its motif. */
+  echoTargets?: readonly number[];
+  /**
+   * Preferred z-order of the objects as item indices, bottom first. It replaces the art-directed order (and
+   * arrangements are scored against it); items it does not list go on top in index order.
+   */
+  stacking?: readonly number[];
+}
 
 interface EchoLink {
   /** Index in `ComposeInput.backgrounds`. */
@@ -79,6 +95,35 @@ function linkEchoes(items: readonly ComposeItem[], backgrounds: readonly Compose
   return links;
 }
 
+/** Echoes behind explicitly chosen objects; targets outside `items` are skipped. */
+function targetEchoes(
+  items: readonly ComposeItem[],
+  backgrounds: readonly ComposeItem[],
+  targets: readonly number[],
+): EchoLink[] {
+  const links: EchoLink[] = [];
+  backgrounds.forEach((_, background) => {
+    const object = targets[background];
+    if (object === undefined || !Number.isInteger(object) || object < 0 || object >= items.length) return;
+    links.push({ background, object, order: links.length });
+  });
+  return links;
+}
+
+/** Listed indices (valid, first occurrence), then the unlisted ones in index order; null for no preference. */
+function normalizeStacking(stacking: readonly number[] | undefined, count: number): number[] | null {
+  if (!stacking || stacking.length === 0) return null;
+  const seen = new Set<number>();
+  const order: number[] = [];
+  for (const index of stacking) {
+    if (!Number.isInteger(index) || index < 0 || index >= count || seen.has(index)) continue;
+    seen.add(index);
+    order.push(index);
+  }
+  for (let index = 0; index < count; index += 1) if (!seen.has(index)) order.push(index);
+  return order;
+}
+
 type Pose = Pick<PlacedLayer, 'x' | 'y' | 'rotation' | 'size'>;
 
 /** Rotated bounds of every object and echo for objects posed by `poseOf`. */
@@ -112,8 +157,8 @@ interface Candidate {
 }
 
 /** Smallest share of any object's bounds left uncovered by the objects stacked above it. */
-function minUncoveredShare(dims: readonly Dim[], boxes: readonly Box[]): number {
-  const order = zOrder(dims, boxes);
+function minUncoveredShare(dims: readonly Dim[], boxes: readonly Box[], stacking: readonly number[] | null): number {
+  const order = zOrder(dims, boxes, stacking);
   let min = 1;
   order.forEach((index, at) => {
     const above = order.slice(at + 1).map((i) => boxes[i] as Box);
@@ -140,12 +185,16 @@ function evaluate(
   mode: LayoutMode,
   zone: Box,
   fill: number,
+  stacking: readonly number[] | null,
+  /** False for big sets: occlusion sampling is quadratic in the object count, so it is skipped. */
+  occlusion: boolean,
 ): Candidate {
   const unit = unitPoses(arrangement, dims);
   const boxes = groupBoxes(items, backgrounds, links, mode, unit, null);
   const union = unionBox([...boxes.objects, ...boxes.echoes]);
   const scale = Math.min((fill * zone.width) / union.width, (fill * zone.height) / union.height);
-  return { arrangement, scale, union, unit, minUncovered: minUncoveredShare(dims, boxes.objects) };
+  const minUncovered = occlusion ? minUncoveredShare(dims, boxes.objects, stacking) : 1;
+  return { arrangement, scale, union, unit, minUncovered };
 }
 
 function preference(arrangement: Arrangement, zone: Box): number {
@@ -202,15 +251,26 @@ function keepVisible(poses: Pose[], items: readonly ComposeItem[], artboard: Siz
   }
 }
 
-/** Larger painted area behind, smaller in front; the hero is lifted until it is not buried. */
-function zOrder(dims: readonly Dim[], boxes: readonly Box[]): number[] {
-  const order = dims
+/** Painted area, largest first (back to front); equal areas keep later items behind. */
+function byAreaDescending(dims: readonly Dim[]): number[] {
+  return dims
     .map((d) => d.index)
     .sort((a, b) => {
       const da = dims[a] as Dim;
       const db = dims[b] as Dim;
       return db.w * db.h - da.w * da.h || b - a;
     });
+}
+
+/** Big sets: area order with the hero simply on top (no overlap sampling). */
+function denseZOrder(dims: readonly Dim[]): number[] {
+  return [...byAreaDescending(dims).filter((i) => i !== 0), 0];
+}
+
+/** Preferred stacking if given; otherwise larger painted area behind, smaller in front, the hero lifted until it is not buried. */
+function zOrder(dims: readonly Dim[], boxes: readonly Box[], stacking: readonly number[] | null): number[] {
+  if (stacking) return [...stacking];
+  const order = byAreaDescending(dims);
   let at = order.indexOf(0);
   while (at < order.length - 1) {
     const above = order.slice(at + 1).map((i) => boxes[i] as Box);
@@ -222,7 +282,7 @@ function zOrder(dims: readonly Dim[], boxes: readonly Box[]): number[] {
 }
 
 /** Deterministic art-directed composition (uniform common scale, source proportions preserved). */
-export function compose(input: ComposeInput): ComposeResult {
+export function compose(input: ComposeInput, options: ComposeOptions = {}): ComposeResult {
   const { items, backgrounds, artboard, mode } = input;
   const zones = getZones(artboard, mode);
   if (items.length === 0) return { ...zones, layers: [] };
@@ -230,12 +290,17 @@ export function compose(input: ComposeInput): ComposeResult {
   const zone = zones.artZone;
   const metas = items.map((it) => it.meta);
   const dims = makeDims(metas, rotationsFor(metas, mode));
-  const links = linkEchoes(items, backgrounds);
+  const links = options.echoTargets
+    ? targetEchoes(items, backgrounds, options.echoTargets)
+    : linkEchoes(items, backgrounds);
+  const stacking = normalizeStacking(options.stacking, items.length);
   const fill = items.length === 1 ? SINGLE_FILL[mode] : FILL[mode];
+  const dense = items.length > EXHAUSTIVE_MAX_ITEMS;
   const allowColumn = zone.width / zone.height <= 1;
 
-  const candidates = candidateArrangements(dims, allowColumn).map((arrangement) =>
-    evaluate(arrangement, dims, items, backgrounds, links, mode, zone, fill),
+  const arrangements = dense ? denseArrangements(dims) : candidateArrangements(dims, allowColumn);
+  const candidates = arrangements.map((arrangement) =>
+    evaluate(arrangement, dims, items, backgrounds, links, mode, zone, fill, stacking, !dense),
   );
   const best = pickCandidate(candidates, zone);
 
@@ -249,7 +314,8 @@ export function compose(input: ComposeInput): ComposeResult {
   if (mode === 'offset') keepVisible(poses, items, artboard);
 
   const boxes = poses.map((pose, i) => layerBounds(pose, (items[i] as ComposeItem).meta));
-  const objects: PlacedLayer[] = zOrder(dims, boxes).map((i) => {
+  const order = stacking ?? (dense ? denseZOrder(dims) : zOrder(dims, boxes, null));
+  const objects: PlacedLayer[] = order.map((i) => {
     const pose = poses[i] as Pose;
     return { motif: (items[i] as ComposeItem).motif, role: 'object', ...pose, rank: i };
   });

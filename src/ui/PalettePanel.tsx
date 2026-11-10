@@ -58,8 +58,8 @@ export function PalettePanel(): JSX.Element {
   const confirmRemove = (palette: Palette): void => {
     setConfirmId(null);
     refocusRef.current = true;
+    // Announces the one outcome itself, including a removal that applies only to this tab.
     api.removeCustomPalette(palette.id);
-    api.announce(`Палитра «${palette.name}» удалена`, 'info');
   };
 
   const copyHex = async (hex: string): Promise<void> => {

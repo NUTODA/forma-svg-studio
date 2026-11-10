@@ -2,11 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { availableMotifs } from '../../assets/availability';
 import { assetManifest } from '../../assets/manifest';
 import {
+  addMotifToDoc,
   createDoc,
   DEMO_PRESETS,
   docFromMotifs,
   objectMotifs,
-  placeNewLayer,
   recomposeDoc,
   withBackgroundObjects,
 } from '../../doc/doc';
@@ -14,12 +14,17 @@ import { canRedo, canUndo, createEditorState, editorReducer, type EditorState } 
 import {
   backupDraft,
   clearDraft,
+  commitPaletteEdit,
   DRAFT_BACKUP_KEY,
+  DRAFT_KEY,
   loadCustomPalettes,
   loadDraft,
-  saveCustomPalettes,
+  paletteIdTakenMessage,
+  paletteLimitMessage,
   saveDraft,
   type DraftLoad,
+  type PaletteCommit,
+  type PaletteEdit,
 } from '../../doc/persist';
 import type {
   ArtboardPresetId,
@@ -32,15 +37,22 @@ import type {
   MotifId,
   Palette,
 } from '../../domain/types';
-import { MAX_LAYERS } from '../../doc/validate';
-import { buildExportSvg, requiredFiles, type RenderContext } from '../../export/render';
+import { MAX_HEADLINE_CHARS, MAX_LAYERS } from '../../doc/validate';
+import {
+  buildExportSvg,
+  exportTitle,
+  nothingToExportReason,
+  requiredFiles,
+  type RenderContext,
+} from '../../export/render';
 import { ARTBOARD_PRESETS, getZones } from '../../layout/compose';
 import { BUILTIN_PALETTES, DEFAULT_PALETTE_ID } from '../../palette/builtins';
 import { createColorResolver, paperColor } from '../../palette/resolve';
+import { copyText } from '../PalettePanel.logic';
 import { downloadText } from '../util/download';
 import { commandForKey, isInsideOpenDialog, isTextEntryTarget, needsSelection, type ShortcutCommand } from '../util/shortcuts';
 import { exportFileName } from '../util/slug';
-import { formatUniqueList, normalizeAngle, replaceFirstOccurrence } from '../util/text';
+import { normalizeAngle, replaceToken } from '../util/text';
 import {
   analyseBrief,
   buildDemo,
@@ -52,7 +64,7 @@ import {
   motifName,
   motifsWithoutDetail,
 } from './briefing';
-import type { BriefResult, EditorApi, ReorderTarget, StatusLevel, StatusMessage } from './editorContext';
+import type { BriefResult, EditorApi, PaletteChange, ReorderTarget, StatusLevel, StatusMessage } from './editorContext';
 import { useTemplates } from './useTemplates';
 
 const AUTOSAVE_DELAY_MS = 400;
@@ -62,6 +74,10 @@ interface Boot {
   doc: DocState;
   brief: BriefResult | null;
   status: StatusMessage | null;
+  /** An unreadable draft with no copy yet: autosave must leave it alone. */
+  draftHeld: boolean;
+  /** The stored draft text as this tab found it: the baseline the two-tab guard compares against. */
+  raw: string | null;
 }
 
 function getStorage(): Storage | null {
@@ -72,7 +88,7 @@ function getStorage(): Storage | null {
   }
 }
 
-function readDraft(store: Storage | null): DraftLoad {
+function readDraft(store: Pick<Storage, 'getItem'> | null): DraftLoad {
   if (!store) return { status: 'empty' };
   try {
     return loadDraft(store);
@@ -81,6 +97,102 @@ function readDraft(store: Storage | null): DraftLoad {
   }
 }
 
+/**
+ * Autosave holds off while an unreadable draft has no copy. Each retry says whether it still has to
+ * (`held`: storage refused the copy), has just been copied (`copied`) or is no longer there (`gone`).
+ */
+export function retryDraftBackup(store: Pick<Storage, 'getItem' | 'setItem'>): 'held' | 'copied' | 'gone' {
+  if (readDraft(store).status !== 'invalid') return 'gone';
+  return backupDraft(store) ? 'copied' : 'held';
+}
+
+/*
+ * Two tabs share one draft key. The guard is sequential and keeps no format of its own: a tab remembers the
+ * stored draft text it last read or wrote (`seen`) and writes only while storage still holds exactly that
+ * (or already holds the very document it is about to write).
+ */
+
+/** The stored draft exactly as the browser holds it; `null` when there is none or storage is blocked. */
+export function readRawDraft(store: Pick<Storage, 'getItem'>): string | null {
+  try {
+    return store.getItem(DRAFT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Key order and spacing aside: two documents with the same content give the same text. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
+}
+
+/**
+ * Whether the stored text already holds this document. A restored draft comes back validated, so writing it
+ * out again can reorder fields without changing a thing; that is not work another tab should be asked to yield to.
+ */
+function storedDraftHolds(raw: string, doc: DocState): boolean {
+  try {
+    const stored = loadDraft({ getItem: () => raw });
+    return stored.status === 'ok' && canonicalJson(stored.doc) === canonicalJson(doc);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `unchanged`: storage already holds this document, so nothing was written. `conflict`: another tab changed the
+ * draft since `seen`, so nothing was written. `saved` and `unchanged` carry the stored text, the new `seen`;
+ * for `saved` it is exactly what was handed to storage, never a re-read that another tab could have changed.
+ */
+export type GuardedDraftWrite =
+  | { result: 'saved'; raw: string }
+  | { result: 'unchanged'; raw: string }
+  | { result: 'conflict' }
+  | { result: 'failed' };
+
+export function saveDraftUnlessChanged(
+  store: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
+  doc: DocState,
+  seen: string | null,
+): GuardedDraftWrite {
+  const stored = readRawDraft(store);
+  // Equal content loses nothing whoever wrote it, so it is neither a write nor a conflict.
+  if (stored !== null && storedDraftHolds(stored, doc)) return { result: 'unchanged', raw: stored };
+  if (stored !== seen) return { result: 'conflict' };
+  // `saveDraft` owns the serialisation: take the exact text it hands to storage.
+  const written: { raw: string | null } = { raw: null };
+  const saved = saveDraft(
+    {
+      setItem: (key, value) => {
+        store.setItem(key, value);
+        written.raw = value;
+      },
+      removeItem: (key) => store.removeItem(key),
+    },
+    doc,
+  );
+  return saved && written.raw !== null ? { result: 'saved', raw: written.raw } : { result: 'failed' };
+}
+
+/** «Новый» drops the draft this tab has seen, never a newer one from another tab. Afterwards nothing is stored. */
+export function clearDraftUnlessChanged(
+  store: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
+  seen: string | null,
+): { cleared: true; raw: null } | { cleared: false } {
+  if (readRawDraft(store) !== seen) return { cleared: false };
+  clearDraft(store);
+  return { cleared: true, raw: null };
+}
+
+const OTHER_TAB_PAUSED =
+  'Автосохранение выключено: черновик изменён в другой вкладке и остался нетронутым. Эту версию сохраните SVG-файлом, затем обновите страницу';
+const OTHER_TAB_NEW =
+  'Начат новый документ, но автосохранение выключено: в другой вкладке есть более новый черновик, он не тронут. Обновите страницу, чтобы открыть его';
+
 const files = assetManifest.files;
 const planes = assetManifest.planes;
 const available: ReadonlySet<MotifId> = new Set(availableMotifs(files));
@@ -88,26 +200,39 @@ const metaByFile = new Map([...files, ...planes].map((meta) => [meta.file, meta]
 
 function computeBoot(): Boot {
   const store = getStorage();
+  // Read before the draft is parsed: if another tab writes in between, this tab only ever looks older than it is.
+  const raw = store ? readRawDraft(store) : null;
   const draft = readDraft(store);
   if (draft.status === 'ok') {
-    return { doc: draft.doc, brief: null, status: { id: 1, text: 'Черновик восстановлен', level: 'info' } };
+    return {
+      doc: draft.doc,
+      brief: null,
+      status: { id: 1, text: 'Черновик восстановлен', level: 'info' },
+      draftHeld: false,
+      raw,
+    };
   }
   if (draft.status === 'invalid') {
-    // Autosave will soon write a fresh document: keep the unreadable original instead of losing it.
+    // Autosave would soon write a fresh document over the unreadable original: keep a copy first. If the
+    // copy fails, the original stays untouched (autosave is held) until a retry succeeds or «Новый».
     const kept = store ? backupDraft(store) : false;
-    const note = kept ? ` Копия сохранена в браузере под ключом «${DRAFT_BACKUP_KEY}».` : '';
+    const note = kept
+      ? ` Копия сохранена в браузере под ключом «${DRAFT_BACKUP_KEY}».`
+      : ' Копию сохранить не удалось: исходный черновик остаётся нетронутым, а автосохранение выключено, пока копия не получится или вы не нажмёте «Новый».';
     return {
       doc: createDoc(),
       brief: null,
       status: { id: 1, text: `Черновик не загружен — ${draft.reason}${note}`, level: 'warning' },
+      draftHeld: !kept,
+      raw,
     };
   }
   const first = DEMO_PRESETS[0];
   if (first) {
     const demo = buildDemo(first, files, available);
-    return { doc: demo.doc, brief: demo.brief, status: null };
+    return { doc: demo.doc, brief: demo.brief, status: null, draftHeld: false, raw };
   }
-  return { doc: createDoc(), brief: null, status: null };
+  return { doc: createDoc(), brief: null, status: null, draftHeld: false, raw };
 }
 
 /**
@@ -144,9 +269,73 @@ function pickPalette(list: readonly Palette[], id: string): Palette {
   );
 }
 
-/** Title mode makes the text the headline; a names list is not a headline, so a new scene starts without one. */
+/**
+ * Title mode makes the text the headline; a names list is not a headline, so a new scene starts without one.
+ * A restored brief may be longer than a headline may be, and a headline over the limit makes the draft unreadable.
+ */
 export function headlineForBrief(mode: BriefMode, text: string): string {
-  return mode === 'title' ? text.trim() : '';
+  if (mode !== 'title') return '';
+  const trimmed = text.trim();
+  if (trimmed.length <= MAX_HEADLINE_CHARS) return trimmed;
+  const cut = trimmed.slice(0, MAX_HEADLINE_CHARS);
+  // Never end on half of a surrogate pair: a lone surrogate breaks URI encoding downstream.
+  const last = cut.charCodeAt(cut.length - 1);
+  return (last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut).trimEnd();
+}
+
+/** An edit that was applied: stored, or kept for this tab only. The other outcomes were refused. */
+type PaletteWrite = Extract<PaletteChange, 'saved' | 'session'>;
+type PaletteStatus = { text: string; level: StatusLevel };
+
+function loadBootPalettes(): Palette[] {
+  const store = getStorage();
+  if (!store) return [];
+  try {
+    const builtInIds = new Set(BUILTIN_PALETTES.map((p) => p.id));
+    return loadCustomPalettes(store).filter((p) => !builtInIds.has(p.id));
+  } catch {
+    return [];
+  }
+}
+
+/*
+ * Palette names are user text of any length, and the status line is narrow: the failure and its consequence
+ * come first and the name last, so a long name can only crowd out itself.
+ */
+
+/** One message per import: a palette the browser refused to store works now but is gone after a reload. */
+export function paletteAddedStatus(name: string, change: PaletteWrite): PaletteStatus {
+  return change === 'saved'
+    ? { text: `Палитра «${name}» добавлена`, level: 'success' }
+    : {
+        text: `Добавлено только в этой вкладке, не сохранено — после перезагрузки пропадёт палитра «${name}»`,
+        level: 'warning',
+      };
+}
+
+/** A removal the browser refused to store leaves the old list saved, so the palette may come back. */
+export function paletteRemovedStatus(name: string, change: PaletteWrite): PaletteStatus {
+  return change === 'saved'
+    ? { text: `Палитра «${name}» удалена`, level: 'info' }
+    : {
+        text: `Удалено только в этой вкладке, не сохранено — после перезагрузки может вернуться палитра «${name}»`,
+        level: 'warning',
+      };
+}
+
+/**
+ * Layer ids of a document that replaces the present one are minted above every `nextId` in the history
+ * (undo and redo branches included): selection follows ids, so an id must never name two different layers.
+ */
+export function withIdsAboveHistory(state: EditorState, next: DocState): DocState {
+  const { past, present, future } = state.history;
+  const floor = Math.max(...[...past, present, ...future].map((d) => d.nextId));
+  const layers = next.layers.map((layer, i) => ({ ...layer, id: `l${floor + i}` }));
+  return { ...next, layers, nextId: floor + layers.length };
+}
+
+function layerLimitMessage(): string {
+  return `На холсте уже ${MAX_LAYERS} слоёв — это предел`;
 }
 
 function layerOf(state: EditorState, id: string) {
@@ -159,16 +348,8 @@ export function useEditor(): EditorApi {
   const [brief, setBrief] = useState<BriefResult | null>(boot.brief);
   const [status, setStatus] = useState<StatusMessage | null>(boot.status);
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [customPalettes, setCustomPalettes] = useState<Palette[]>(() => {
-    const store = getStorage();
-    if (!store) return [];
-    try {
-      const builtInIds = new Set(BUILTIN_PALETTES.map((p) => p.id));
-      return loadCustomPalettes(store).filter((p) => !builtInIds.has(p.id));
-    } catch {
-      return [];
-    }
-  });
+  const [bootPalettes] = useState(loadBootPalettes);
+  const [customPalettes, setCustomPalettes] = useState<Palette[]>(bootPalettes);
   const statusCounter = useRef(boot.status ? boot.status.id : 0);
 
   const doc = state.history.present;
@@ -202,11 +383,35 @@ export function useEditor(): EditorApi {
   /* ---- autosave ---- */
   const saveFailed = useRef(false);
   const pendingSave = useRef<DocState | null>(null);
+  const draftHeld = useRef(boot.draftHeld);
+  // Stored draft text this tab last read or wrote. Another tab's change makes it stale; autosave then stays
+  // off for the rest of this page's life, so the newer draft and this tab's working copy both survive.
+  const seenRaw = useRef(boot.raw);
+  const otherTabAhead = useRef(false);
   const writeDraft = useCallback(
     (toSave: DocState) => {
       const store = getStorage();
-      const ok = store ? saveDraft(store, toSave) : false;
       pendingSave.current = null;
+      if (otherTabAhead.current) return;
+      if (draftHeld.current && store) {
+        // The unreadable original is still the only copy: write over it only once a copy exists.
+        const retry = retryDraftBackup(store);
+        if (retry === 'held') return;
+        draftHeld.current = false;
+        if (retry === 'copied') {
+          announce(`Копия повреждённого черновика сохранена под ключом «${DRAFT_BACKUP_KEY}» — автосохранение включено`);
+        }
+      }
+      const write: GuardedDraftWrite = store ? saveDraftUnlessChanged(store, toSave, seenRaw.current) : { result: 'failed' };
+      if (write.result === 'conflict') {
+        otherTabAhead.current = true;
+        setSavedAt(null);
+        announce(OTHER_TAB_PAUSED, 'warning');
+        return;
+      }
+      // `unchanged` is as good as a write: the stored draft already is this document.
+      const ok = write.result !== 'failed';
+      if (write.result !== 'failed') seenRaw.current = write.raw;
       setSavedAt(ok ? Date.now() : null);
       if (!ok && !saveFailed.current) announce('Не удалось сохранить черновик — изменения останутся только в этой вкладке', 'warning');
       saveFailed.current = !ok;
@@ -289,15 +494,21 @@ export function useEditor(): EditorApi {
 
   const addMotif = useCallback(
     (motif: MotifId, at?: { x: number; y: number }) => {
-      const layer = available.has(motif) ? placeNewLayer(currentDoc(), motif, files, at) : null;
-      if (!layer) {
+      // The reducer refuses a layer past the limit; say so instead of reporting an add that never happened.
+      if (currentDoc().layers.length >= MAX_LAYERS) {
+        announce(layerLimitMessage(), 'warning');
+        return;
+      }
+      // The whole document goes in as one step: a motif too big for the common scale shrinks its neighbours in proportion.
+      const added = available.has(motif) ? addMotifToDoc(currentDoc(), motif, files, at) : null;
+      if (!added) {
         announce(`Не удалось добавить «${motifName(motif)}» — нет подходящего файла`, 'warning');
         return;
       }
-      dispatch({ type: 'addLayers', layers: [layer], select: true });
+      replaceDoc(added.doc, added.id);
       announce(`Добавлено: ${motifName(motif)}`);
     },
-    [announce, currentDoc],
+    [announce, currentDoc, replaceDoc],
   );
 
   const applyIssueAction = useCallback(
@@ -306,7 +517,7 @@ export function useEditor(): EditorApi {
       switch (action.kind) {
         case 'replace': {
           if (action.token === undefined || action.replacement === undefined) return;
-          composeBrief(replaceFirstOccurrence(text, action.token, action.replacement), mode);
+          composeBrief(replaceToken(text, action.token, action.replacement, action.range), mode);
           return;
         }
         case 'add': {
@@ -343,7 +554,7 @@ export function useEditor(): EditorApi {
         return;
       }
       const demo = buildDemo(preset, files, available);
-      replaceDoc(demo.doc, null);
+      replaceDoc(withIdsAboveHistory(latest.current.state, demo.doc), null);
       setBrief(demo.brief);
       announce(`Загружен пример «${preset.label}»`, 'success');
     },
@@ -386,7 +597,7 @@ export function useEditor(): EditorApi {
       const layer = layerOf(latest.current.state, id);
       if (!layer) return;
       if (latest.current.state.history.present.layers.length >= MAX_LAYERS) {
-        announce(`На холсте уже ${MAX_LAYERS} слоёв — это предел`, 'warning');
+        announce(layerLimitMessage(), 'warning');
         return;
       }
       dispatch({ type: 'duplicateLayer', id, offset: DUPLICATE_OFFSET });
@@ -493,52 +704,60 @@ export function useEditor(): EditorApi {
   }, [announce, currentDoc, replaceDoc, selectionIn]);
 
   /* ---- custom palettes ---- */
-  const persistPalettes = useCallback(
-    (next: Palette[]) => {
-      const store = getStorage();
-      const ok = store ? saveCustomPalettes(store, next) : false;
-      if (!ok) announce('Палитра не сохранена в браузере — после перезагрузки она пропадёт', 'warning');
-    },
-    [announce],
-  );
+  // Each edit is applied to what storage holds now, not to the list this tab loaded, so palettes another tab
+  // added or removed since are kept. The shown list is updated first, so a refused write still leaves a working
+  // session; `storedPalettes` is what this tab last saw in storage, the base the next edit is merged against.
+  const storedPalettes = useRef<readonly Palette[]>(bootPalettes);
+  const commitPalette = useCallback((edit: PaletteEdit): PaletteCommit => {
+    const tab = { list: latest.current.customPalettes, stored: storedPalettes.current };
+    const result = commitPaletteEdit(getStorage(), tab, edit);
+    storedPalettes.current = result.stored;
+    latest.current.customPalettes = result.list;
+    setCustomPalettes(result.list);
+    return result;
+  }, []);
 
   const addCustomPalette = useCallback(
-    (added: Palette) => {
+    (added: Palette): PaletteChange => {
       if (BUILTIN_PALETTES.some((p) => p.id === added.id)) {
         announce('Идентификатор палитры совпадает со встроенной — выберите другой', 'warning');
-        return;
+        return 'rejected';
       }
-      const custom = latest.current.customPalettes;
       const entry: Palette = { ...added, builtIn: false };
-      const next = custom.some((p) => p.id === entry.id)
-        ? custom.map((p) => (p.id === entry.id ? entry : p))
-        : [...custom, entry];
-      latest.current.customPalettes = next;
-      setCustomPalettes(next);
-      persistPalettes(next);
+      const { status } = commitPalette({ kind: 'add', palette: entry });
+      if (status === 'limit' || status === 'id-taken') {
+        announce(status === 'limit' ? paletteLimitMessage() : paletteIdTakenMessage(entry.id), 'warning');
+        return status;
+      }
+      const { text, level } = paletteAddedStatus(entry.name, status);
+      announce(text, level);
+      return status;
     },
-    [announce, persistPalettes],
+    [announce, commitPalette],
   );
 
   const removeCustomPalette = useCallback(
-    (id: string) => {
-      const custom = latest.current.customPalettes;
-      if (!custom.some((p) => p.id === id)) return;
-      const next = custom.filter((p) => p.id !== id);
-      latest.current.customPalettes = next;
-      setCustomPalettes(next);
-      persistPalettes(next);
+    (id: string): PaletteChange => {
+      const removed = latest.current.customPalettes.find((p) => p.id === id);
+      if (!removed) return 'rejected';
+      // Only an addition can be refused: a removal reaches storage or stays in this tab.
+      const change: PaletteWrite = commitPalette({ kind: 'remove', id }).status === 'saved' ? 'saved' : 'session';
       if (currentDoc().paletteId === id) dispatch({ type: 'patchDoc', patch: { paletteId: DEFAULT_PALETTE_ID } });
+      const { text, level } = paletteRemovedStatus(removed.name, change);
+      announce(text, level);
+      return change;
     },
-    [currentDoc, persistPalettes],
+    [announce, commitPalette, currentDoc],
   );
 
   /* ---- output ---- */
   const buildCurrentSvg = useCallback(async (): Promise<{ svg: string; fileName: string } | null> => {
     const { palette: activePalette, color: resolver, paper: paperHex } = latest.current;
     const snapshot = latest.current.state.history.present;
-    if (snapshot.layers.length === 0) {
-      announce('Добавьте объекты — экспортировать пока нечего', 'warning');
+    // Same question the top-bar buttons ask: the shortcut must not save a file that is only paper.
+    const nothing = nothingToExportReason(snapshot, { files, planes, palette: activePalette });
+    if (nothing !== null) {
+      announce(`${nothing} — экспортировать пока нечего`, 'warning');
       return null;
     }
     const loaded = await ensureTemplates(requiredFiles(snapshot, { files, planes, palette: activePalette }));
@@ -552,7 +771,7 @@ export function useEditor(): EditorApi {
       color: resolver,
     };
     const preset = ARTBOARD_PRESETS[snapshot.preset];
-    const title = snapshot.headline.trim() || formatUniqueList(objectMotifs(snapshot).map(motifName));
+    const title = exportTitle(snapshot, motifName);
     const svg = buildExportSvg(snapshot, context, {
       artboard: { width: preset.width, height: preset.height },
       paper: paperHex,
@@ -574,15 +793,10 @@ export function useEditor(): EditorApi {
 
   const copySvg = useCallback(async () => {
     try {
-      const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
-      if (!clipboard?.writeText) {
-        announce('Буфер обмена недоступен в этом браузере — сохраните SVG файлом', 'error');
-        return;
-      }
       const built = await buildCurrentSvg();
       if (!built) return;
-      await clipboard.writeText(built.svg);
-      announce('SVG скопирован в буфер обмена', 'success');
+      if (await copyText(built.svg)) announce('SVG скопирован в буфер обмена', 'success');
+      else announce('Не удалось скопировать SVG — скачайте его через «Экспорт SVG»', 'error');
     } catch (error) {
       announce(`Не удалось скопировать SVG — ${errorText(error)}`, 'error');
     }
@@ -590,10 +804,17 @@ export function useEditor(): EditorApi {
 
   const resetDraft = useCallback(() => {
     const store = getStorage();
-    if (store) clearDraft(store);
+    // A newer draft from another tab is not this tab's to erase: «Новый» then resets only this tab, autosave stays off.
+    const outcome = store && !otherTabAhead.current ? clearDraftUnlessChanged(store, seenRaw.current) : null;
+    if (outcome !== null && outcome.cleared) seenRaw.current = outcome.raw;
+    const superseded = otherTabAhead.current || (outcome !== null && !outcome.cleared);
+    if (superseded) otherTabAhead.current = true;
+    // Starting anew is the explicit choice to drop an unreadable draft that could not be copied.
+    draftHeld.current = false;
     dispatch({ type: 'load', doc: createDoc() });
     setBrief(null);
-    announce('Начат новый документ');
+    if (superseded) announce(OTHER_TAB_NEW, 'warning');
+    else announce('Начат новый документ');
   }, [announce]);
 
   /* ---- global shortcuts ---- */

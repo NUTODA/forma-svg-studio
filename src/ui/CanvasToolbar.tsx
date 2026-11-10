@@ -97,23 +97,42 @@ export function CanvasToolbar(): JSX.Element {
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Publish both pill heights so the artboard keeps clear of them when they wrap.
+  // Publish both pill heights so the artboard keeps clear of them when they wrap. The vars set the
+  // artboard's padding, and the artboard is observed too and sits higher in the tree than the pills,
+  // so writing them from inside the observer callback ends the delivery loop with undelivered
+  // notifications (WebKit reports it). Observed changes are applied on the next frame instead.
   useEffect(() => {
     const top = topRef.current;
     const bottom = bottomRef.current;
     const host = rootRef.current?.parentElement;
     if (!top || !bottom || !host) return undefined;
+    const setVar = (name: string, px: number) => {
+      const value = `${px}px`;
+      if (host.style.getPropertyValue(name) !== value) host.style.setProperty(name, value);
+    };
     const publish = () => {
-      host.style.setProperty('--canvas-toolbar-h', `${top.offsetHeight}px`);
-      host.style.setProperty('--canvas-toolbar-bottom-h', `${bottom.offsetHeight}px`);
+      // Read both heights before writing either, so layout is flushed once.
+      const topHeight = top.offsetHeight;
+      const bottomHeight = bottom.offsetHeight;
+      setVar('--canvas-toolbar-h', topHeight);
+      setVar('--canvas-toolbar-bottom-h', bottomHeight);
     };
     publish();
     if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(publish);
+    let frame = 0;
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        publish();
+      });
+    };
+    const observer = new ResizeObserver(schedule);
     observer.observe(top);
     observer.observe(bottom);
     return () => {
       observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
       host.style.removeProperty('--canvas-toolbar-h');
       host.style.removeProperty('--canvas-toolbar-bottom-h');
     };

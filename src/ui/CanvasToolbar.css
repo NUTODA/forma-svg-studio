@@ -70,3 +70,48 @@
     gap: var(--sp-1);
   }
 }
+
+/*
+ * Touch: 44px targets. From 760px the controls grow. In the one-column layout taller rows would squeeze
+ * the 62vh canvas, so a transparent ::before fills the dead space to the pill edge or mid row gap
+ * (26 + 2 × 9; icon padding box 30 + 2 × 7). place-self keeps the buttons' centring from collapsing it.
+ */
+@media (pointer: coarse) and (min-width: 760px) {
+  .canvas-toolbar__seg .seg__item {
+    height: 44px;
+    min-width: 44px;
+  }
+
+  .canvas-toolbar__pill .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 759px) {
+  .canvas-toolbar__pill {
+    row-gap: var(--sp-3);
+  }
+
+  .canvas-toolbar__seg .seg__item {
+    position: relative;
+  }
+
+  .canvas-toolbar__pill .icon-btn {
+    position: relative;
+    width: 32px;
+    height: 32px;
+  }
+
+  .canvas-toolbar__seg .seg__item::before,
+  .canvas-toolbar__pill .icon-btn::before {
+    content: '';
+    position: absolute;
+    inset: -9px 0;
+    place-self: stretch;
+  }
+
+  .canvas-toolbar__pill .icon-btn::before {
+    inset: -7px;
+  }
+}

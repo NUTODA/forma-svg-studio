@@ -1,6 +1,7 @@
 // The artboard preview and the exported file are built from the SAME functions in this module,
 // which is what guarantees "export renders exactly like the preview".
 import { resolveAsset, resolvePlane, variantForLayer } from '../assets/availability';
+import { objectMotifs } from '../doc/doc';
 import type {
   AssetFileMeta,
   ColorMode,
@@ -8,6 +9,7 @@ import type {
   Detail,
   DocState,
   Layer,
+  MotifId,
   Palette,
   PlaneFileMeta,
   Size,
@@ -163,11 +165,45 @@ export function requiredFiles(doc: DocState, ctx: Pick<RenderContext, 'files' | 
   return [...files];
 }
 
+/**
+ * Whether the document would draw anything on the paper: a visible layer that has a file, or the plane
+ * when it is on and the palette has one. The top-bar buttons and the export shortcut all ask this, so a
+ * file that is only paper is never offered — and a document that is only the plane always is.
+ */
+export function hasExportableContent(doc: DocState, ctx: Pick<RenderContext, 'files' | 'planes' | 'palette'>): boolean {
+  return requiredFiles(doc, ctx).length > 0;
+}
+
+/** Why there is nothing to export (Russian, for hints and the status line); null when there is something. */
+export function nothingToExportReason(
+  doc: DocState,
+  ctx: Pick<RenderContext, 'files' | 'planes' | 'palette'>,
+): string | null {
+  if (hasExportableContent(doc, ctx)) return null;
+  if (doc.layers.length === 0) return 'Холст пуст';
+  return doc.layers.every((layer) => layer.hidden) ? 'Все объекты скрыты' : 'Нечего рисовать';
+}
+
+/** `<title>` of an SVG that has none of its own. */
+export const DEFAULT_EXPORT_TITLE = 'Форма';
+
+/**
+ * Title and file-name source of an export: the deliberate headline when there is one, otherwise the names of
+ * the objects that are actually in the file (visible, by rank), otherwise empty. A headline is metadata only:
+ * its zone guide is never drawn into the SVG.
+ */
+export function exportTitle(doc: DocState, nameOf: (motif: MotifId) => string): string {
+  const headline = doc.headline.trim();
+  if (headline) return headline;
+  const visible = { ...doc, layers: doc.layers.filter((layer) => !layer.hidden) };
+  return [...new Set(objectMotifs(visible).map(nameOf))].join(', ');
+}
+
 export interface ExportOptions {
   artboard: Size;
   /** Paper colour; the artboard background rect. */
   paper: string;
-  /** Used for <title>; defaults to «Форма». */
+  /** Used for <title>; blank or missing becomes «Форма». */
   title?: string;
 }
 
@@ -227,7 +263,7 @@ export function buildExportSvg(doc: DocState, ctx: RenderContext, opts: ExportOp
   const w = formatNumber(width);
   const h = formatNumber(height);
   const xlink = usedTemplates.some(templateUsesXlink) ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : '';
-  const title = escapeXmlText(opts.title ?? 'Форма');
+  const title = escapeXmlText(opts.title?.trim() || DEFAULT_EXPORT_TITLE);
   const desc = escapeXmlText(`Создано в «Форме» · ${w} × ${h} · палитра «${ctx.palette.name}»`);
 
   const lines = [

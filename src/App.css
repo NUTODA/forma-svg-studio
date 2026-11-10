@@ -114,7 +114,8 @@
     height: auto;
     min-height: 100dvh;
     grid-template-columns: var(--app-left-w) minmax(0, 1fr);
-    grid-template-rows: var(--topbar-h) auto auto var(--statusbar-h);
+    /* The status row grows with a wrapped message but never stretches into spare height. */
+    grid-template-rows: var(--topbar-h) auto auto minmax(var(--statusbar-h), max-content);
     grid-template-areas:
       'top top'
       'left work'
@@ -125,6 +126,12 @@
   .app__top {
     position: sticky;
     top: 0;
+  }
+
+  /* The page scrolls here, so the status line would sit below the fold: keep clipboard/export/errors in view. */
+  .app__status {
+    position: sticky;
+    bottom: 0;
   }
 
   .app__left,
@@ -146,7 +153,7 @@
 @media (max-width: 759px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: var(--topbar-h) auto auto auto var(--statusbar-h);
+    grid-template-rows: var(--topbar-h) auto auto auto minmax(var(--statusbar-h), max-content);
     grid-template-areas:
       'top'
       'left'
@@ -161,8 +168,8 @@
   }
 
   .app__workspace {
-    height: 62vh;
-    min-height: 62vh;
+    /* The stacked page can scroll; short landscape screens still need room between both toolbars. */
+    height: max(420px, 62dvh);
   }
 
   .app__right {

@@ -141,6 +141,11 @@ export interface IssueAction {
   motif?: MotifId;
   token?: string;
   replacement?: string;
+  /**
+   * `replace` only: where `token` stands in the analysed text (UTF-16 offsets, end exclusive), so a repeated
+   * word is corrected where it was clicked. Ignored when the text no longer holds `token` at that spot.
+   */
+  range?: { start: number; end: number };
 }
 
 export interface InputIssue {

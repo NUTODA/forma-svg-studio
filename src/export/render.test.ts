@@ -15,14 +15,18 @@ import { BUILTIN_PALETTES } from '../palette/builtins';
 import { buildTemplate, type SvgTemplate } from '../svg/template';
 import { FORBIDDEN_ELEMENTS, checkReferences } from '../svg/testing';
 import { childElements, getAttr, parseXml, type XmlElement } from '../svg/xml';
+import { exportFileName } from '../ui/util/slug';
 import {
   buildExportSvg,
+  exportTitle,
   formatNumber,
+  hasExportableContent,
   layerAsset,
   layerAttributes,
   layerGroupIds,
   layerScale,
   layerTransform,
+  nothingToExportReason,
   planeAttributes,
   renderLayer,
   renderPlane,
@@ -524,6 +528,103 @@ describe('requiredFiles', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* What is worth exporting, and what it is called                      */
+/* ------------------------------------------------------------------ */
+
+describe('hasExportableContent', () => {
+  const base = { files: FILES, planes: PLANE_METAS, palette: palette('peach') };
+  const hiddenBook = { ...BOOK_A, hidden: true };
+  const hiddenCoin = { ...COIN, hidden: true };
+
+  it('is false for paper only: no layers, or every layer hidden and no plane', () => {
+    expect(hasExportableContent(docWith([]), base)).toBe(false);
+    expect(hasExportableContent(docWith([hiddenBook, hiddenCoin]), base)).toBe(false);
+  });
+
+  it('is true as soon as one layer is visible', () => {
+    expect(hasExportableContent(docWith([BOOK_A]), base)).toBe(true);
+    expect(hasExportableContent(docWith([hiddenBook, COIN]), base)).toBe(true);
+  });
+
+  it('counts a visible plane as content, alone or under hidden layers', () => {
+    expect(hasExportableContent(docWith([], { showPlane: true }), base)).toBe(true);
+    expect(hasExportableContent(docWith([hiddenBook], { showPlane: true }), base)).toBe(true);
+  });
+
+  it('ignores a plane the palette cannot draw and layers without a file', () => {
+    expect(hasExportableContent(docWith([], { showPlane: true }), { ...base, planes: [] })).toBe(false);
+    expect(hasExportableContent(docWith([layer('p', 'pen')]), base)).toBe(false);
+  });
+
+  it('agrees with what buildExportSvg draws: an export with content has a layer or the plane in it', () => {
+    const drawn = (doc: DocState): boolean => {
+      const root = parseXml(exportOf(doc));
+      const ids = childElements(root).map((el) => getAttr(el, 'id'));
+      return ids.includes('plane') || artworkGroups(exportOf(doc)).length > 0;
+    };
+    const docs = [
+      docWith([]),
+      docWith([hiddenBook]),
+      docWith([BOOK_A]),
+      docWith([], { showPlane: true }),
+      docWith([hiddenBook], { showPlane: true }),
+      docWith([layer('p', 'pen')]),
+    ];
+    for (const doc of docs) expect(hasExportableContent(doc, base)).toBe(drawn(doc));
+  });
+});
+
+describe('nothingToExportReason', () => {
+  const base = { files: FILES, planes: PLANE_METAS, palette: palette('peach') };
+
+  it('names the cause, and is null when there is something to export', () => {
+    expect(nothingToExportReason(docWith([]), base)).toBe('Холст пуст');
+    expect(nothingToExportReason(docWith([{ ...BOOK_A, hidden: true }]), base)).toBe('Все объекты скрыты');
+    expect(nothingToExportReason(docWith([layer('p', 'pen')]), base)).toBe('Нечего рисовать');
+    expect(nothingToExportReason(docWith([BOOK_A]), base)).toBeNull();
+    expect(nothingToExportReason(docWith([], { showPlane: true }), base)).toBeNull();
+  });
+});
+
+describe('exportTitle', () => {
+  const NAMES: Partial<Record<MotifId, string>> = { book: 'Книга', coin: 'Монета', pen: 'Ручка' };
+  const nameOf = (motif: MotifId): string => NAMES[motif] ?? motif;
+
+  it('lists the objects of the file once each, in rank order', () => {
+    const doc = docWith([layer('a', 'coin', { rank: 1 }), layer('b', 'book', { rank: 0 }), layer('c', 'coin', { rank: 2 })]);
+    expect(exportTitle(doc, nameOf)).toBe('Книга, Монета');
+  });
+
+  it('leaves out hidden objects and echoes, which are not in the file', () => {
+    expect(exportTitle(docWith([BOOK_A, { ...COIN, hidden: true }]), nameOf)).toBe('Книга');
+    expect(exportTitle(docWith([ECHO, BOOK_A]), nameOf)).toBe('Книга');
+    expect(exportTitle(docWith([{ ...BOOK_A, hidden: true }, COIN]), nameOf)).toBe('Монета');
+  });
+
+  it('is empty when no object is left, so the caller falls back to the default', () => {
+    expect(exportTitle(docWith([]), nameOf)).toBe('');
+    expect(exportTitle(docWith([{ ...BOOK_A, hidden: true }], { showPlane: true }), nameOf)).toBe('');
+  });
+
+  it('keeps a deliberate headline, trimmed, even when its objects are hidden', () => {
+    expect(exportTitle(docWith([BOOK_A], { headline: '  Весенний букет ' }), nameOf)).toBe('Весенний букет');
+    expect(exportTitle(docWith([{ ...BOOK_A, hidden: true }], { headline: 'Заголовок' }), nameOf)).toBe('Заголовок');
+  });
+
+  it('uses only the visible objects of a names list, which has no headline', () => {
+    const doc = docWith([BOOK_A, { ...COIN, hidden: true }], { brief: { mode: 'names', text: 'книга, монета' }, headline: '' });
+    expect(exportTitle(doc, nameOf)).toBe('Книга');
+    expect(exportFileName(exportTitle(doc, nameOf), 1200, 630)).toBe('forma-kniga-1200x630.svg');
+  });
+
+  it('gives a file name of its own when there is no title at all', () => {
+    expect(exportFileName(exportTitle(docWith([], { showPlane: true }), nameOf), 1200, 630)).toBe(
+      'forma-illustration-1200x630.svg',
+    );
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /* buildExportSvg                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -573,6 +674,19 @@ describe('buildExportSvg', () => {
 
   it('defaults the title to «Форма»', () => {
     expect(exportOf(docWith([BOOK_A]))).toContain('<title>Форма</title>');
+  });
+
+  it('defaults an empty or blank title to «Форма» as well', () => {
+    expect(exportOf(docWith([BOOK_A]), ctx(), { title: '' })).toContain('<title>Форма</title>');
+    expect(exportOf(docWith([BOOK_A]), ctx(), { title: '  \n ' })).toContain('<title>Форма</title>');
+  });
+
+  it('never draws the headline into the file, only into its metadata', () => {
+    const doc = docWith([BOOK_A], { layout: 'title', showHeadline: true, headline: 'Весенний букет' });
+    const svg = exportOf(doc, ctx(), { title: exportTitle(doc, () => 'Книга') });
+    expect(svg).toContain('<title>Весенний букет</title>');
+    expect(svg).not.toContain('<text');
+    expect(svg.replace('<title>Весенний букет</title>', '')).not.toContain('Весенний букет');
   });
 
   it('draws the paper rect first, with a normalised colour', () => {

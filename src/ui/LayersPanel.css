@@ -159,3 +159,32 @@
 .layers__plane .icon-btn {
   margin-right: var(--sp-1);
 }
+
+/*
+ * Coarse pointers: 44px rows and row buttons, actions always shown (some coarse pointers report hover)
+ * with disabled ↑/↓ dimmed. `min-width: 0` lets long names ellipsize instead of widening the grid track.
+ */
+@media (pointer: coarse) {
+  .layers__row {
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .layers__main {
+    height: 44px;
+  }
+
+  .layers__row .layers__action,
+  .layers__plane .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .layers__row .layers__reveal {
+    opacity: 1;
+  }
+
+  .layers__row .layers__reveal:disabled {
+    opacity: 0.35;
+  }
+}

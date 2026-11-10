@@ -3,7 +3,7 @@ import { MOTIFS } from '../domain/motifs';
 import { MOTIF_IDS, type MotifId } from '../domain/types';
 import { analyzeTitle } from './analyzeTitle';
 import { damerauLevenshtein } from './fuzzy';
-import { findNegations, tokenize } from './normalize';
+import { findNegations, matchCase, tokenize } from './normalize';
 import { parseNames } from './parseNames';
 import { stemWord } from './stem';
 
@@ -31,6 +31,14 @@ describe('helpers', () => {
     expect(damerauLevenshtein('книга', 'кнгиа', 2)).toBe(1);
     expect(damerauLevenshtein('книга', 'кнгиа')).toBe(1);
     expect(damerauLevenshtein('телефон', 'телефно')).toBe(1);
+  });
+
+  it('matches the case of the word a correction replaces', () => {
+    expect(matchCase('Ламба', 'лампа')).toBe('Лампа');
+    expect(matchCase('ЛАМБА', 'лампа')).toBe('ЛАМПА');
+    expect(matchCase('ламба', 'лампа')).toBe('лампа');
+    expect(matchCase('Л', 'лампа')).toBe('Лампа');
+    expect(matchCase('', 'лампа')).toBe('лампа');
   });
 
   it('negates the object after «без», including coordinated lists', () => {
@@ -143,8 +151,38 @@ describe('analyzeTitle', () => {
     const result = analyzeTitle('Новый телефан в подарок', ALL);
     expect(result.selected).toContain('phone');
     const typo = result.issues.find((i) => i.code === 'typo');
-    expect(typo?.action).toMatchObject({ kind: 'replace', token: 'телефан', replacement: 'телефон' });
+    expect(typo?.action).toMatchObject({
+      kind: 'replace',
+      token: 'телефан',
+      replacement: 'телефон',
+      range: { start: 6, end: 13 },
+    });
     expect(result.matches.find((m) => m.motif === 'phone')?.reasons.some((r) => r.kind === 'fuzzy')).toBe(true);
+  });
+
+  it('writes the correction the way the typo was written', () => {
+    const action = (title: string) => analyzeTitle(title, ALL).issues.find((i) => i.code === 'typo')?.action;
+    // The first word of a title keeps its capital …
+    expect(action('Телефан в подарок')).toMatchObject({
+      token: 'Телефан',
+      replacement: 'Телефон',
+      range: { start: 0, end: 7 },
+    });
+    expect(action('Телефан в подарок')?.label).toContain('Телефон');
+    // … a word in the middle does not gain one …
+    expect(action('Новый телефан в подарок')?.replacement).toBe('телефон');
+    // … and capitals that were typed on purpose stay.
+    expect(action('Купить ТЕЛЕФАН')?.replacement).toBe('ТЕЛЕФОН');
+  });
+
+  it('points each typo of a repeated word at its own place', () => {
+    const ranges = analyzeTitle('телефан, телефан', ALL)
+      .issues.filter((i) => i.code === 'typo')
+      .map((i) => i.action?.range);
+    expect(ranges).toEqual([
+      { start: 0, end: 7 },
+      { start: 9, end: 16 },
+    ]);
   });
 
   it('respects and clamps the selection limit, reporting trimming', () => {
@@ -198,6 +236,60 @@ describe('parseNames', () => {
     const big = parseNames('9 монет', ALL);
     expect(big.entries[0]?.count).toBe(4);
     expect(big.issues.some((i) => i.code === 'count-clamped')).toBe(true);
+  });
+
+  it('does not read list numbering as a quantity', () => {
+    const lists = [
+      '1) книга\n2) монета',
+      '(1) книга; (2) монета',
+      '[1] книга, [2] монета',
+      '1: книга\n2: монета',
+      '1- книга\n2- монета',
+      '1.) книга\n2.) монета',
+      '#1 книга, #2 монета',
+      'а) книга\nб) монета',
+    ];
+    for (const list of lists) {
+      const result = parseNames(list, ALL);
+      expect(result.motifs, list).toEqual(['book', 'coin']);
+      expect(result.entries.map((e) => e.count), list).toEqual([1, 1]);
+    }
+  });
+
+  it('keeps intentional quantities, also behind a list marker', () => {
+    expect(parseNames('2 монеты', ALL).entries[0]?.count).toBe(2);
+    expect(parseNames('2 монеты, книга ×3', ALL).motifs).toEqual(['coin', 'coin', 'book', 'book', 'book']);
+    expect(parseNames('1) 2 монеты\n2) книга', ALL).motifs).toEqual(['coin', 'coin', 'book']);
+  });
+
+  it('points every replace action at the exact fragment it was raised for', () => {
+    const rangeOf = (input: string) =>
+      parseNames(input, ALL)
+        .issues.filter((i) => i.action?.kind === 'replace')
+        .map((i) => i.action?.range);
+
+    expect(rangeOf('ламба, ламба')).toEqual([
+      { start: 0, end: 5 },
+      { start: 7, end: 12 },
+    ]);
+    expect(rangeOf('деньги, книга, деньги')).toEqual([
+      { start: 0, end: 6 },
+      { start: 15, end: 21 },
+    ]);
+    // A list marker and a quantity in front of the word do not shift the range.
+    expect(rangeOf('1) 2 ламба, 2) ламба')).toEqual([
+      { start: 5, end: 10 },
+      { start: 15, end: 20 },
+    ]);
+
+    for (const input of ['ламба, ламба', 'деньги, книга, деньги', '1) 2 ламба, 2) ламба', '  телефан ;  ламба']) {
+      for (const issue of parseNames(input, ALL).issues) {
+        const { action } = issue;
+        if (action?.kind !== 'replace') continue;
+        expect(action.range, input).toBeDefined();
+        expect(input.slice(action.range?.start, action.range?.end), input).toBe(action.token);
+      }
+    }
   });
 
   it('merges exact repeats instead of duplicating entries silently', () => {

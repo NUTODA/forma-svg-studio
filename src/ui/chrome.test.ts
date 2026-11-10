@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { createDoc } from '../doc/doc';
-import type { AssetFileMeta, DocState, Layer, MotifId } from '../domain/types';
+import type { AssetFileMeta, DocState, Layer, MotifId, PlaneFileMeta } from '../domain/types';
 import { getZones, ARTBOARD_PRESETS } from '../layout/compose';
 import { BUILTIN_PALETTES } from '../palette/builtins';
 import { createColorResolver, paperColor } from '../palette/resolve';
@@ -89,8 +89,8 @@ function makeApi(overrides: Partial<EditorApi> = {}, doc: DocState = createDoc()
     setShowHeadline: noop,
     setHeadline: noop,
     recompose: noop,
-    addCustomPalette: noop,
-    removeCustomPalette: noop,
+    addCustomPalette: () => 'saved',
+    removeCustomPalette: () => 'saved',
     requestTemplates: noop,
     exportSvg: () => Promise.resolve(),
     copySvg: () => Promise.resolve(),
@@ -236,6 +236,58 @@ describe('TopBar', () => {
     const html = render(TopBar, makeApi({}, doc));
     expect(html).not.toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*Экспорт SVG/);
     expect(html).toContain('Копировать SVG');
+  });
+
+  describe('export buttons follow what the file would contain', () => {
+    const PLANE: PlaneFileMeta = {
+      file: 'plane-lavender-l.svg',
+      palette: 'lavender',
+      detail: 'l',
+      viewBox: { x: 0, y: 0, width: 100, height: 100 },
+      bounds: { x: 0, y: 0, width: 100, height: 100 },
+      colors: [],
+      bytes: 100,
+      warnings: [],
+    };
+    const buttonOf = (html: string, label: string): string =>
+      (html.match(new RegExp(`<button[^>]*>(?:(?!</button>).)*${label}</span></button>`)) ?? [''])[0];
+    const buttons = (api: EditorApi) => {
+      const html = render(TopBar, api);
+      return { exportButton: buttonOf(html, 'Экспорт SVG'), copyButton: buttonOf(html, 'Копировать SVG') };
+    };
+
+    it('disables both when every layer is hidden and there is no plane (the file would be only paper)', () => {
+      const doc: DocState = { ...createDoc(), layers: [layer('l1', 'book', { hidden: true })], showPlane: false };
+      const { exportButton, copyButton } = buttons(makeApi({}, doc));
+      expect(exportButton).toContain('disabled');
+      expect(exportButton).toContain('Все объекты скрыты');
+      expect(copyButton).toContain('disabled');
+      expect(copyButton).toContain('Все объекты скрыты');
+    });
+
+    it('enables both when a visible plane is all there is', () => {
+      const doc: DocState = { ...createDoc(), layers: [], showPlane: true };
+      const { exportButton, copyButton } = buttons(makeApi({ planes: [PLANE] }, doc));
+      expect(exportButton).not.toContain('disabled');
+      expect(copyButton).not.toContain('disabled');
+    });
+
+    it('enables both for a visible plane under hidden layers, and disables them when the plane is off', () => {
+      const hidden = [layer('l1', 'book', { hidden: true })];
+      const withPlane = buttons(makeApi({ planes: [PLANE] }, { ...createDoc(), layers: hidden, showPlane: true }));
+      expect(withPlane.exportButton).not.toContain('disabled');
+      const planeOff = buttons(makeApi({ planes: [PLANE] }, { ...createDoc(), layers: hidden, showPlane: false }));
+      expect(planeOff.exportButton).toContain('disabled');
+    });
+
+    it('does not count a plane that the palette has no file for', () => {
+      const doc: DocState = { ...createDoc(), layers: [], showPlane: true };
+      expect(buttons(makeApi({ planes: [] }, doc)).exportButton).toContain('disabled');
+    });
+
+    it('says the canvas is empty when there are no layers at all', () => {
+      expect(buttons(makeApi()).exportButton).toContain('Холст пуст');
+    });
   });
 
   it('keeps the confirmation popover closed until «Новый» is pressed', () => {

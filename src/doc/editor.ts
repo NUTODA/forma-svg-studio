@@ -1,5 +1,6 @@
 import type { DocState, Layer } from '../domain/types';
-import { MAX_COORD, MAX_LAYERS } from './validate';
+import { MAX_LAYER_SIZE, boundLayer, clampCoord, hasUsableSize } from './bounds';
+import { MAX_LAYERS } from './validate';
 
 export interface History<T> {
   past: T[];
@@ -71,8 +72,6 @@ export function canRedo(state: EditorState): boolean {
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-const MAX_LAYER_SIZE = 9999;
-
 function deepEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
@@ -94,10 +93,26 @@ function withValidSelection(state: EditorState): EditorState {
   return hasLayer(state.history.present, state.selectedId) ? state : { ...state, selectedId: null };
 }
 
-/** Normalised copy of a layer with the patch applied (non-finite numbers and non-positive sizes are ignored). */
-/** Same bounds the draft validator enforces, so every state the editor can reach can be restored. */
-const clampCoord = (value: number): number => Math.max(-MAX_COORD, Math.min(MAX_COORD, value));
+/**
+ * A document handed in whole stays restorable from a draft: bounded geometry on every layer (layers that
+ * are already fine keep their identity) and at most MAX_LAYERS of them — echoes go first, then the lowest layers.
+ */
+function boundDoc(doc: DocState): DocState {
+  let layers = doc.layers.map(boundLayer);
+  let excess = layers.length - MAX_LAYERS;
+  if (excess > 0) {
+    layers = layers.filter((l) => {
+      if (excess <= 0 || l.role !== 'background') return true;
+      excess -= 1;
+      return false;
+    });
+    layers = layers.slice(Math.max(0, layers.length - MAX_LAYERS));
+  }
+  const unchanged = layers.length === doc.layers.length && layers.every((l, i) => l === doc.layers[i]);
+  return unchanged ? doc : { ...doc, layers };
+}
 
+/** Normalised copy of a layer with the patch applied (non-finite numbers and non-positive sizes are ignored). */
 function patchLayer(layer: Layer, patch: LayerPatch): Layer {
   const next: Layer = { ...layer };
   if (patch.x !== undefined && Number.isFinite(patch.x)) next.x = clampCoord(patch.x);
@@ -122,6 +137,13 @@ function commit(initial: EditorState, next: DocState, key: string | null = null)
   const { past, present } = state.history;
   if (deepEqual(next, present)) return state;
   const merge = key !== null && key === state.lastCoalesce;
+  if (merge && past.length > 0 && deepEqual(next, past[past.length - 1])) {
+    return {
+      ...state,
+      history: { past: past.slice(0, -1), present: next, future: [] },
+      lastCoalesce: null,
+    };
+  }
   const nextPast = merge ? past : [...past, present].slice(-HISTORY_LIMIT);
   return {
     ...state,
@@ -173,7 +195,7 @@ function step(state: EditorState, action: EditorAction): EditorState {
       return createEditorState(action.doc);
 
     case 'replaceDoc': {
-      const committed = commit(state, action.doc);
+      const committed = commit(state, boundDoc(action.doc));
       const selectedId = action.selectId === undefined ? committed.selectedId : action.selectId;
       return withValidSelection({ ...committed, selectedId });
     }
@@ -187,8 +209,9 @@ function step(state: EditorState, action: EditorAction): EditorState {
     }
 
     case 'addLayers': {
-      if (action.layers.length === 0 || doc.layers.length + action.layers.length > MAX_LAYERS) return state;
-      const added = action.layers.map((l, i): Layer => ({ ...l, id: `l${doc.nextId + i}` }));
+      const specs = action.layers.filter(hasUsableSize);
+      if (specs.length === 0 || doc.layers.length + specs.length > MAX_LAYERS) return state;
+      const added = specs.map((l, i): Layer => boundLayer({ ...l, id: `l${doc.nextId + i}` }));
       const next: DocState = { ...doc, layers: [...doc.layers, ...added], nextId: doc.nextId + added.length };
       const committed = commit(state, next);
       const last = added[added.length - 1];
@@ -214,7 +237,12 @@ function step(state: EditorState, action: EditorAction): EditorState {
       const original = doc.layers[index];
       if (!original || doc.layers.length >= MAX_LAYERS) return state;
       const offset = Number.isFinite(action.offset) ? action.offset : 0;
-      const copy: Layer = { ...original, id: `l${doc.nextId}`, x: original.x + offset, y: original.y + offset };
+      const copy: Layer = boundLayer({
+        ...original,
+        id: `l${doc.nextId}`,
+        x: original.x + offset,
+        y: original.y + offset,
+      });
       const layers = [...doc.layers.slice(0, index + 1), copy, ...doc.layers.slice(index + 1)];
       const committed = commit(state, { ...doc, layers, nextId: doc.nextId + 1 });
       return { ...committed, selectedId: copy.id };

@@ -232,6 +232,17 @@ describe('gestures', () => {
 });
 
 describe('coalescing', () => {
+  it('does not leave an empty undo step after typing and deleting the same text', () => {
+    const initial = createEditorState(createDoc());
+    const reverted = run(initial,
+      { type: 'patchDoc', patch: { headline: 'a' }, coalesce: 'headline' },
+      { type: 'patchDoc', patch: { headline: '' }, coalesce: 'headline' },
+    );
+    expect(doc(reverted)).toEqual(doc(initial));
+    expect(canUndo(reverted)).toBe(false);
+    expect(canRedo(reverted)).toBe(false);
+  });
+
   it('merges consecutive edits with the same key into one step', () => {
     let s = createEditorState(createDoc());
     for (const text of ['К', 'Кн', 'Кни', 'Книг']) {
@@ -408,5 +419,72 @@ describe('limits shared with the draft validator', () => {
     const full = withLayers(500);
     const s = run(full, { type: 'addLayers', layers: [spec()] }, { type: 'duplicateLayer', id: 'l1', offset: 10 });
     expect(s).toBe(full);
+  });
+
+  it('a duplicate at the coordinate limit stays inside it', () => {
+    let s = withLayers(1);
+    s = run(
+      s,
+      { type: 'updateLayer', id: 'l1', patch: { x: 1_000_000, y: -1_000_000 } },
+      { type: 'duplicateLayer', id: 'l1', offset: 24 },
+    );
+    const [original, copy] = doc(s).layers as [Layer, Layer];
+    expect(copy.id).toBe('l2');
+    expect(copy).toMatchObject({ x: 1_000_000, y: -999_976 });
+    expect(original).toMatchObject({ x: 1_000_000, y: -1_000_000 });
+    expect(validateDoc(doc(s))).not.toBeNull();
+    s = run(s, { type: 'duplicateLayer', id: 'l1', offset: -5_000_000 });
+    expect(validateDoc(doc(s))).not.toBeNull();
+  });
+
+  it('addLayers bounds what it is given and skips layers that cannot be drawn', () => {
+    const s0 = createEditorState(createDoc());
+    const s = run(s0, {
+      type: 'addLayers',
+      layers: [
+        spec({ x: 5_000_000, y: Number.NaN, size: 50_000, rotation: 725, rank: -9_000_000 }),
+        spec({ size: Number.NaN }),
+        spec({ size: -3 }),
+      ],
+    });
+    expect(doc(s).layers).toHaveLength(1);
+    expect(doc(s).layers[0]).toMatchObject({ x: 1_000_000, y: 0, rotation: 5, rank: -1_000_000 });
+    expect(doc(s).layers[0]?.size).toBeLessThan(10_000);
+    expect(doc(s).nextId).toBe(2);
+    expect(validateDoc(doc(s))).not.toBeNull();
+    expect(run(s0, { type: 'addLayers', layers: [spec({ size: 0 })] })).toBe(s0);
+  });
+
+  it('replaceDoc bounds the geometry of the document it receives', () => {
+    const wild: DocState = {
+      ...createDoc(),
+      layers: [
+        { ...spec({ x: 9e9, y: -9e9, size: 123_456, rotation: -725 }), id: 'l1' },
+        { ...spec(), id: 'l2' },
+      ],
+      nextId: 3,
+    };
+    const s = run(createEditorState(createDoc()), { type: 'replaceDoc', doc: wild });
+    expect(doc(s).layers[0]).toMatchObject({ x: 1_000_000, y: -1_000_000, rotation: -5 });
+    expect(doc(s).layers[0]?.size).toBeLessThan(10_000);
+    expect(validateDoc(doc(s))).not.toBeNull();
+    // Layers that were fine keep their identity.
+    expect(doc(s).layers[1]).toBe(wild.layers[1]);
+  });
+
+  it('replaceDoc keeps a document at the layer limit, dropping echoes before anything else', () => {
+    const echo = (i: number): Layer => ({ ...spec({ role: 'background', rank: i }), id: `l${i + 1}` });
+    const object = (i: number): Layer => ({ ...spec({ rank: i }), id: `l${i + 4}` });
+    const over: DocState = {
+      ...createDoc(),
+      layers: [echo(0), echo(1), echo(2), ...Array.from({ length: 498 }, (_, i) => object(i))],
+      nextId: 600,
+    };
+    expect(over.layers).toHaveLength(501);
+    const s = run(createEditorState(createDoc()), { type: 'replaceDoc', doc: over });
+    expect(doc(s).layers).toHaveLength(500);
+    expect(doc(s).layers.filter((l) => l.role === 'object')).toHaveLength(498);
+    expect(doc(s).layers.filter((l) => l.role === 'background').map((l) => l.id)).toEqual(['l2', 'l3']);
+    expect(validateDoc(doc(s))).not.toBeNull();
   });
 });

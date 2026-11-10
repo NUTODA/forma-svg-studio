@@ -158,3 +158,40 @@
     margin: 0 var(--sp-1);
   }
 }
+
+/*
+ * Touch: 44px targets. On phones the «Новый» popover anchors to the header edge (.app__top),
+ * and below 360px icon buttons narrow to 40px so the wordmark still fits.
+ */
+@media (pointer: coarse) {
+  .topbar__actions .icon-btn,
+  .topbar__actions .topbar__btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .topbar__confirm-actions .btn {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar__new {
+    position: static;
+  }
+
+  .topbar__confirm {
+    right: var(--sp-3);
+  }
+}
+
+@media (pointer: coarse) and (max-width: 359px) {
+  .topbar__actions {
+    gap: 0;
+  }
+
+  .topbar__actions .icon-btn,
+  .topbar__actions .topbar__btn {
+    min-width: 40px;
+  }
+}

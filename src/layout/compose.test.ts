@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { ArtboardPresetId, ComposeInput, ComposeItem, LayoutMode, MotifId, PlacedLayer } from '../domain/types';
+import type {
+  ArtboardPresetId,
+  ComposeInput,
+  ComposeItem,
+  ComposeResult,
+  LayoutMode,
+  MotifId,
+  PlacedLayer,
+} from '../domain/types';
 import { ARTBOARD_PRESETS, compose, getZones, layerBounds, orientationOf } from './compose';
 import { boxBottom, boxRight, boxesIntersect, uncoveredFraction, visibleFraction } from './geometry';
 import { SAMPLE_MOTIFS, metaOf } from './testMetas';
@@ -398,5 +406,149 @@ describe('background echoes', () => {
         }
       }
     }
+  });
+});
+
+describe('large compositions', () => {
+  /** `count` items cycling through the sample motifs, echoes for the first two. */
+  function crowd(count: number, preset: ArtboardPresetId, mode: LayoutMode, withEchoes = false): ComposeInput {
+    const motifs = Array.from({ length: count }, (_, i) => SAMPLE_MOTIFS[i % SAMPLE_MOTIFS.length] as MotifId);
+    const p = ARTBOARD_PRESETS[preset];
+    return {
+      items: items(motifs),
+      backgrounds: withEchoes ? echoes(motifs.slice(0, 2)) : [],
+      artboard: { width: p.width, height: p.height },
+      mode,
+    };
+  }
+
+  /** Generous: the unbounded search took seconds at ~100 layers, the bounded one takes milliseconds. */
+  const TIME_LIMIT_MS = 2000;
+
+  function expectWholeAndInside(inp: ComposeInput, result: ComposeResult, count: number): void {
+    const objects = objectsOf(result.layers);
+    expect(objects).toHaveLength(count);
+    expect(objects.map((l) => l.rank).sort((a, b) => a - b)).toEqual(Array.from({ length: count }, (_, i) => i));
+
+    const scales = objects.map((l) => l.size / (inp.items[l.rank] as ComposeItem).meta.bounds.height);
+    for (const s of scales) expect(s).toBeCloseTo(scales[0] as number, 9);
+
+    const zone = result.artZone;
+    for (const l of result.layers) {
+      const meta = ((l.role === 'object' ? inp.items : inp.backgrounds)[l.rank] as ComposeItem).meta;
+      expect(Number.isFinite(l.x) && Number.isFinite(l.y) && l.size > 0).toBe(true);
+      if (l.role === 'background' && inp.mode === 'title') {
+        expect(boxesIntersect(layerBounds(l, meta), result.headlineZone!)).toBe(false);
+        continue;
+      }
+      const b = layerBounds(l, meta);
+      expect(b.x).toBeGreaterThanOrEqual(zone.x - 1);
+      expect(b.y).toBeGreaterThanOrEqual(zone.y - 1);
+      expect(boxRight(b)).toBeLessThanOrEqual(boxRight(zone) + 1);
+      expect(boxBottom(b)).toBeLessThanOrEqual(boxBottom(zone) + 1);
+    }
+
+    // The hero is never buried.
+    const heroAt = result.layers.findIndex((l) => l.role === 'object' && l.rank === 0);
+    const boxOf = (l: PlacedLayer): ReturnType<typeof layerBounds> =>
+      layerBounds(l, (inp.items[l.rank] as ComposeItem).meta);
+    const above = result.layers.slice(heroAt + 1).filter((l) => l.role === 'object').map(boxOf);
+    expect(uncoveredFraction(boxOf(result.layers[heroAt] as PlacedLayer), above)).toBeGreaterThan(0.3);
+  }
+
+  it('keeps every one of 110 layers, inside the zone, in bounded time, for every format and layout', () => {
+    for (const preset of PRESET_IDS) {
+      for (const mode of MODES) {
+        const inp = crowd(110, preset, mode, true);
+        const started = performance.now();
+        const result = compose(inp);
+        expect(performance.now() - started, `${preset} / ${mode}`).toBeLessThan(TIME_LIMIT_MS);
+        expectWholeAndInside(inp, result, 110);
+        expect(echoesOf(result.layers)).toHaveLength(2);
+      }
+    }
+  });
+
+  it('is deterministic for large sets', () => {
+    for (const mode of MODES) expect(compose(crowd(110, 'og', mode, true))).toEqual(compose(crowd(110, 'og', mode, true)));
+  });
+
+  it('handles the layer limit (500 objects) in bounded time', () => {
+    const inp = crowd(500, 'portrait', 'composed');
+    const started = performance.now();
+    const result = compose(inp);
+    expect(performance.now() - started).toBeLessThan(TIME_LIMIT_MS);
+    expectWholeAndInside(inp, result, 500);
+  });
+
+  it('works on both sides of the switch from the exhaustive to the bounded search', () => {
+    for (const count of [16, 17, 24, 44]) {
+      for (const mode of MODES) {
+        const inp = crowd(count, 'og', mode, true);
+        const started = performance.now();
+        const result = compose(inp);
+        expect(performance.now() - started, `${count} / ${mode}`).toBeLessThan(TIME_LIMIT_MS);
+        expectWholeAndInside(inp, result, count);
+      }
+    }
+  });
+});
+
+describe('compose options', () => {
+  const rankOrder = (result: ComposeResult): number[] => objectsOf(result.layers).map((l) => l.rank);
+
+  it('seats an echo behind the explicitly chosen object', () => {
+    const inp: ComposeInput = {
+      items: items(['coin', 'coin', 'coin']),
+      backgrounds: echoes(['coin']),
+      artboard: { width: 1200, height: 630 },
+      mode: 'composed',
+    };
+    const nearestObject = (result: ComposeResult): number => {
+      const echo = echoesOf(result.layers)[0] as PlacedLayer;
+      const distance = (l: PlacedLayer): number => Math.hypot(echo.x - l.x, echo.y - l.y);
+      return objectsOf(result.layers).reduce((a, b) => (distance(a) <= distance(b) ? a : b)).rank;
+    };
+    expect(nearestObject(compose(inp))).toBe(0);
+    expect(nearestObject(compose(inp, { echoTargets: [2] }))).toBe(2);
+    expect(nearestObject(compose(inp, { echoTargets: [1] }))).toBe(1);
+  });
+
+  it('skips echoes whose target does not exist', () => {
+    const inp: ComposeInput = {
+      items: items(['book', 'coin']),
+      backgrounds: echoes(['book', 'coin']),
+      artboard: { width: 1200, height: 630 },
+      mode: 'composed',
+    };
+    const result = compose(inp, { echoTargets: [0, 7] });
+    expect(echoesOf(result.layers).map((l) => l.rank)).toEqual([0]);
+  });
+
+  it('honours a preferred stacking order', () => {
+    const inp = input('og', 'composed', 4);
+    expect(rankOrder(compose(inp, { stacking: [3, 1, 0, 2] }))).toEqual([3, 1, 0, 2]);
+    // Unlisted items go on top in index order; unknown and repeated entries are ignored.
+    expect(rankOrder(compose(inp, { stacking: [2, 2, 9, -1] }))).toEqual([2, 0, 1, 3]);
+    // No preference means the art-directed order.
+    expect(rankOrder(compose(inp, { stacking: [] }))).toEqual(rankOrder(compose(inp)));
+  });
+
+  it('honours a preferred stacking order for large sets as well', () => {
+    const count = 30;
+    const motifs = Array.from({ length: count }, (_, i) => SAMPLE_MOTIFS[i % SAMPLE_MOTIFS.length] as MotifId);
+    const inp: ComposeInput = { items: items(motifs), backgrounds: [], artboard: { width: 1080, height: 1080 }, mode: 'composed' };
+    const reversed = Array.from({ length: count }, (_, i) => count - 1 - i);
+    expect(rankOrder(compose(inp, { stacking: reversed }))).toEqual(reversed);
+  });
+
+  it('keeps the common scale when a stacking is imposed', () => {
+    const inp = input('og', 'composed', 3);
+    const plain = compose(inp);
+    const stacked = compose(inp, { stacking: [2, 1, 0] });
+    const pose = (r: ComposeResult, rank: number): PlacedLayer => objectsOf(r.layers).find((l) => l.rank === rank) as PlacedLayer;
+    // Scale is shared, so every object keeps its size relative to the others.
+    expect(pose(stacked, 1).size / pose(stacked, 0).size).toBeCloseTo(pose(plain, 1).size / pose(plain, 0).size, 9);
+    expect(rankOrder(stacked)).toEqual([2, 1, 0]);
   });
 });

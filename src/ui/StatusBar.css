@@ -79,6 +79,38 @@
   height: 14px;
 }
 
+/*
+ * Where the page scrolls the bar is pinned to the bottom of the screen (App.css), and a message wraps: a
+ * warning or error has to be readable in full on a 320px phone, not cut to one ellipsized line. The clamp
+ * only guards against a runaway name; messages put the failure first and the user's text last.
+ */
+@media (max-width: 1023px) {
+  .statusbar {
+    height: auto;
+    min-height: var(--statusbar-h);
+    padding-block: var(--sp-1);
+  }
+
+  .statusbar__text {
+    align-items: flex-start;
+  }
+
+  .statusbar__dot {
+    /* Centred on the first line of text rather than on the whole block. */
+    margin-top: calc((var(--lh-ui) * 1em - 6px) / 2);
+  }
+
+  .statusbar__label {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 900px) {
   .statusbar__inventory {
     display: none;

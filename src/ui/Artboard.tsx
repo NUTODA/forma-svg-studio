@@ -276,9 +276,20 @@ export function Artboard(): JSX.Element {
     [],
   );
 
+  // A second finger, or any press while another pointer owns a gesture, must neither
+  // steal the selection nor overwrite that gesture.
+  function rejectSecondaryPointer(e: ReactPointerEvent): boolean {
+    const g = gestureRef.current;
+    if (e.isPrimary && (!g || g.pointerId === e.pointerId)) return false;
+    // Touch focus-on-press would otherwise select the tapped layer through onTargetFocus.
+    e.preventDefault();
+    return true;
+  }
+
   function onLayerPointerDown(e: ReactPointerEvent<SVGRectElement>, entry: LayerEntry): void {
     if (e.button !== 0) return;
     e.stopPropagation();
+    if (rejectSecondaryPointer(e)) return;
     const start = pointerPoint(e);
     if (!start) return;
     if (api.selectedId !== entry.layer.id) api.select(entry.layer.id);
@@ -298,6 +309,7 @@ export function Artboard(): JSX.Element {
   function onRotatePointerDown(e: ReactPointerEvent<SVGGElement>, layer: Layer): void {
     if (e.button !== 0) return;
     e.stopPropagation();
+    if (rejectSecondaryPointer(e)) return;
     const start = pointerPoint(e);
     if (!start) return;
     startGesture({
@@ -416,7 +428,7 @@ export function Artboard(): JSX.Element {
       ref={viewportRef}
       className="artboard"
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) api.select(null);
+        if (e.target === e.currentTarget && !rejectSecondaryPointer(e)) api.select(null);
       }}
     >
       <div className="artboard__sheet" style={{ width: displayWidth }}>
@@ -477,7 +489,9 @@ export function Artboard(): JSX.Element {
               className="artboard__deselect"
               width={artboard.width}
               height={artboard.height}
-              onPointerDown={() => api.select(null)}
+              onPointerDown={(e) => {
+                if (!rejectSecondaryPointer(e)) api.select(null);
+              }}
             />
 
             {entries.map(({ layer, meta, rendered }) => {

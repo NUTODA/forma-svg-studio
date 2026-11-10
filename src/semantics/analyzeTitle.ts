@@ -10,7 +10,7 @@ import {
   type TitleAnalysis,
 } from '../domain/types';
 import { EXAMPLE_TITLE, FALLBACK_ORDER, PRIMARY_THEME } from './lexicon';
-import { findNegations, isContentToken, tokenize, type Token } from './normalize';
+import { findNegations, isContentToken, matchCase, tokenize, type Token } from './normalize';
 import {
   THEME_BY_ID,
   findNameSpans,
@@ -64,7 +64,7 @@ interface Hit {
   direct: boolean;
   contributions: Contribution[];
   themes: ThemeCredit[];
-  typo?: { token: string; word: string };
+  typo?: { token: string; word: string; start: number; end: number };
 }
 
 const q = (text: string): string => `„${text}“`;
@@ -198,7 +198,7 @@ function collectHits(source: string, tokens: readonly Token[]): Hit[] {
         },
       ],
       themes: [{ themeId: PRIMARY_THEME[candidate.motif], weight: 1 }],
-      typo: { token: token.raw, word: candidate.word },
+      typo: { token: token.raw, word: candidate.word, start: token.start, end: token.end },
     });
     take(token.index, token.index);
   }
@@ -425,15 +425,18 @@ export function analyzeTitle(
   }
   for (const hit of positive) {
     if (hit.typo === undefined) continue;
+    // Written the way the typo was: a capitalised first word stays capitalised, a mid-sentence word stays lower case.
+    const replacement = matchCase(hit.typo.token, hit.typo.word);
     issues.push({
       level: 'info',
       code: 'typo',
-      message: `Возможно, опечатка: ${q(hit.typo.token)} — вы имели в виду ${q(hit.typo.word)}?`,
+      message: `Возможно, опечатка: ${q(hit.typo.token)} — вы имели в виду ${q(replacement)}?`,
       action: {
         kind: 'replace',
-        label: `Заменить на ${q(hit.typo.word)}`,
+        label: `Заменить на ${q(replacement)}`,
         token: hit.typo.token,
-        replacement: hit.typo.word,
+        replacement,
+        range: { start: hit.typo.start, end: hit.typo.end },
       },
     });
   }

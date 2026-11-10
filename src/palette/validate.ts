@@ -21,6 +21,7 @@ export type PaletteValidation =
 
 const NAME_MAX_CHARS = 40;
 const ECHO_MAX_CHARS = 40;
+const ENGINE_MESSAGE_MAX_CHARS = 120;
 const MAX_LISTED_UNKNOWN_KEYS = 5;
 const MIN_CONTRAST = 3;
 const KNOWN_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set(['schema', 'name', 'id', 'plane', 'colors']);
@@ -82,7 +83,11 @@ function positionToLineColumn(text: string, position: number): { line: number; c
   return { line: lines.length, column: (lines[lines.length - 1]?.length ?? 0) + 1 };
 }
 
-function describeJsonError(error: unknown, text: string): string {
+/**
+ * Firefox and recent Chrome name the line and column, older Chrome only the offset, and WebKit usually
+ * neither. A place is only claimed when the engine gave one; otherwise the engine's own words are passed on.
+ */
+export function describeJsonError(error: unknown, text: string): string {
   const message = error instanceof Error ? error.message : '';
   const hint = 'Проверьте запятые, кавычки и скобки рядом с этим местом.';
 
@@ -95,11 +100,16 @@ function describeJsonError(error: unknown, text: string): string {
     const { line, column } = positionToLineColumn(text, Number(position[1]));
     return `Ошибка JSON в строке ${line}, столбце ${column}. ${hint}`;
   }
-  if (/end of (JSON|data)|unterminated|unexpected end/i.test(message)) {
+  if (/end of (JSON|data)|unterminated|unexpected end|\bEOF\b/i.test(message)) {
     const { line, column } = positionToLineColumn(text, text.length);
     return `Ошибка JSON в строке ${line}, столбце ${column}: текст оборван, не хватает закрывающей скобки или кавычки.`;
   }
-  return `Ошибка JSON: файл не удалось разобрать. ${hint}`;
+  const detail = stripInvisible(message).trim();
+  const shown = Array.from(detail).slice(0, ENGINE_MESSAGE_MAX_CHARS).join('');
+  return (
+    'Ошибка JSON: браузер не указал, в каком месте. Проверьте запятые, кавычки и скобки по всему тексту.' +
+    (shown ? ` Сообщение браузера: ${shown}` : '')
+  );
 }
 
 const TRANSLIT: Record<string, string> = {
@@ -120,7 +130,8 @@ function slugFromName(name: string): string {
   return slug || 'palette';
 }
 
-function uniqueId(base: string, taken: ReadonlySet<string>): string {
+/** `base`, or `base-2`, `base-3`… — the first id that is neither built in nor in `taken`. */
+export function uniqueId(base: string, taken: ReadonlySet<string>): string {
   const isTaken = (id: string): boolean => taken.has(id) || BUILTIN_PALETTES.some((p) => p.id === id);
   if (!isTaken(base)) return base;
   for (let n = 2; ; n += 1) {
@@ -153,7 +164,9 @@ function validateName(raw: unknown, present: boolean, errors: PaletteError[]): s
     errors.push({ path: 'name', message: `Название должно быть строкой, получено ${echo(raw)}.` });
     return null;
   }
-  const name = stripInvisible(raw).trim();
+  // Composed form (й, ё as one character): a decomposed name would be counted twice, slugged wrongly and
+  // look different from the same name typed on another keyboard.
+  const name = stripInvisible(raw).normalize('NFC').trim();
   const length = Array.from(name).length;
   if (length === 0) {
     errors.push({ path: 'name', message: 'Название палитры пустое — введите от 1 до 40 символов.' });
@@ -195,7 +208,7 @@ function validateColors(
         valid = false;
         errors.push({
           path,
-          message: `Не хватает цвета «${ROLE_INFO[role].label}» — добавьте поле ${role} в формате #RRGGBB.`,
+          message: `Не хватает цвета «${ROLE_INFO[role].label}» — добавьте поле ${role} в формате #RRGGBB или #RGB.`,
         });
       }
       continue;
@@ -204,7 +217,7 @@ function validateColors(
     const hex = typeof value === 'string' && HEX_INPUT.test(value) ? normalizeHex(value) : null;
     if (hex === null) {
       valid = false;
-      errors.push({ path, message: `ожидается цвет в формате #RRGGBB, получено ${echo(value)}` });
+      errors.push({ path, message: `ожидается цвет в формате #RRGGBB или #RGB, получено ${echo(value)}` });
     } else {
       result[role] = hex;
     }

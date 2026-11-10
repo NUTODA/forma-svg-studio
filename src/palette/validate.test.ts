@@ -4,8 +4,10 @@ import { SOURCE_PALETTES } from './roles';
 import {
   PALETTE_MAX_BYTES,
   PALETTE_SCHEMA_ID,
+  describeJsonError,
   paletteTemplate,
   paletteTemplateJson,
+  uniqueId,
   validatePaletteJson,
 } from './validate';
 import type { PaletteError, PaletteValidation } from './validate';
@@ -62,6 +64,27 @@ describe('happy path', () => {
     expect(palette.name).toBe('Моя палитра');
   });
 
+  it('composes a decomposed name, so it is stored, counted and slugged like the composed one', () => {
+    // «й» and «ё» as base letter + combining mark, as macOS file names and some keyboards produce them.
+    const decomposed = 'Морской ёж й'.replace('ё', 'ё');
+    expect(decomposed).not.toBe(decomposed.normalize('NFC'));
+    const { palette } = okOf(validatePaletteJson(doc({ name: decomposed }), NONE));
+    expect(palette.name).toBe('Морской ёж й');
+    expect(palette.name).toBe(palette.name.normalize('NFC'));
+    expect(palette.id).toBe('morskoy-ezh-y');
+  });
+
+  it('counts the name length after composing it', () => {
+    // 40 letters «й» written as «и» + a combining mark are 80 code points but only 40 characters.
+    okOf(validatePaletteJson(doc({ name: 'й'.repeat(40) }), NONE));
+    expect(errorsOf(validatePaletteJson(doc({ name: 'й'.repeat(41) }), NONE))[0]?.path).toBe('name');
+  });
+
+  it('composes marks that an invisible character separated from their letter', () => {
+    const { palette } = okOf(validatePaletteJson(doc({ name: 'и​̆' }), NONE));
+    expect(palette.name).toBe('й');
+  });
+
   it('allows BOM-free whitespace-padded JSON', () => {
     okOf(validatePaletteJson(`\n  ${doc()}  \n`, NONE));
   });
@@ -78,6 +101,21 @@ describe('JSON syntax errors', () => {
   it('reports a truncated document', () => {
     const [error] = errorsOf(validatePaletteJson('{"name": "x"', NONE));
     expect(error?.message).toMatch(/^Ошибка JSON/);
+  });
+
+  it('claims a position only when the engine gave one', () => {
+    const text = '{\n  "a": 1,\n  "b": \n}';
+    const engine = (message: string): string => describeJsonError(new SyntaxError(message), text);
+    // Firefox and recent Chrome: line and column. Older Chrome: an offset, converted here.
+    expect(engine('JSON.parse: unexpected character at line 3 column 8 of the JSON data')).toMatch(/строке 3, столбце 8/);
+    expect(engine('Unexpected token } in JSON at position 20')).toMatch(/строке 4, столбце 1/);
+    // WebKit names neither: no invented place, but the engine's own words are kept.
+    const webkit = engine("JSON Parse error: Unrecognized token '}'");
+    expect(webkit).not.toMatch(/строке \d|столбце \d/);
+    expect(webkit).toContain("JSON Parse error: Unrecognized token '}'");
+    // A cut-off text is reported at its end, also under WebKit's wording.
+    expect(engine('JSON Parse error: Unexpected EOF')).toMatch(/строке 4, столбце 2.*оборван/);
+    expect(describeJsonError('not an error', text)).not.toMatch(/строке \d/);
   });
 
   it('never throws on garbage', () => {
@@ -161,7 +199,18 @@ describe('field errors', () => {
     const errors = errorsOf(validatePaletteJson(doc({ colors: { ...validColors(), ...bad } }), NONE));
     expect(errors.map((e) => e.path).sort()).toEqual(Object.keys(bad).map((k) => `colors.${k}`).sort());
     const accent = errors.find((e) => e.path === 'colors.accent');
-    expect(accent?.message).toBe('ожидается цвет в формате #RRGGBB, получено «violet»');
+    expect(accent?.message).toBe('ожидается цвет в формате #RRGGBB или #RGB, получено «violet»');
+  });
+
+  it('names #RGB wherever it names #RRGGBB, since both are accepted', () => {
+    okOf(validatePaletteJson(doc({ colors: { ...validColors(), accent: '#f0a' } }), NONE));
+    const { paper: _paper, accent: _accent, ...rest } = SOURCE_PALETTES.lavender.colors;
+    const messages = [
+      ...errorsOf(validatePaletteJson(doc({ colors: { ...rest, accent: 'violet' } }), NONE)),
+      ...errorsOf(validatePaletteJson(doc({ colors: rest }), NONE)),
+    ].map((e) => e.message);
+    expect(messages).toHaveLength(2);
+    for (const message of messages) expect(message).toMatch(/#RRGGBB или #RGB/);
   });
 
   it('rejects non-string colour values', () => {
@@ -182,7 +231,7 @@ describe('field errors', () => {
 
   it('does not echo control characters in error messages', () => {
     const errors = errorsOf(validatePaletteJson(doc({ colors: { ...validColors(), accent: 'a\u0000b‮c' } }), NONE));
-    expect(errors[0]?.message).toBe('ожидается цвет в формате #RRGGBB, получено «abc»');
+    expect(errors[0]?.message).toBe('ожидается цвет в формате #RRGGBB или #RGB, получено «abc»');
   });
 
   it('reports every missing role (paper is optional)', () => {
@@ -307,6 +356,12 @@ describe('ids', () => {
     const result = okOf(validatePaletteJson(doc({ id: 'mine' }), taken));
     expect(result.palette.id).toBe('mine-4');
     expect(result.warnings.some((w) => w.includes('mine-4'))).toBe(true);
+  });
+
+  it('offers the same unique id to other callers', () => {
+    expect(uniqueId('mine', NONE)).toBe('mine');
+    expect(uniqueId('mine', new Set(['mine', 'mine-2']))).toBe('mine-3');
+    expect(uniqueId('lavender', NONE)).toBe('lavender-2');
   });
 
   it('keeps unique ids within 40 characters', () => {
