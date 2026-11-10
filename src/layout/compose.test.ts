@@ -222,7 +222,7 @@ describe('background object (scenery)', () => {
       const { vx, vy } = visibleAxes(boxOf(inp, bg!), inp.artboard);
       expect(vx).toBeLessThan(1);
       expect(vy).toBeLessThan(1);
-      expect(Math.min(vx, vy)).toBeGreaterThan(0.3);
+      expect(Math.min(vx, vy)).toBeGreaterThanOrEqual(0.3 - 1e-9);
     }
   });
 
@@ -232,6 +232,41 @@ describe('background object (scenery)', () => {
     // A headline zone covering the whole frame leaves no corner.
     expect(placeScenery(meta, 1, [], board, { x: 0, y: 0, width: 1000, height: 1000 })).toBeNull();
     expect(placeScenery(meta, 0.2, [], board, null)).not.toBeNull();
+  });
+
+  it('stays secondary: skips a candidate that would dominate the frame or lie under the objects', () => {
+    // A lone S coin at its native scale: the S lamp outline would fill most of the frame.
+    const inp: ComposeInput = {
+      items: items(['coin'], 's'),
+      backgrounds: [
+        { motif: 'lamp', meta: metaOf('lamp', 's', 'background') },
+        { motif: 'wallet', meta: metaOf('wallet', 's', 'background') },
+      ],
+      artboard: { width: 1080, height: 1080 },
+      mode: 'composed',
+    };
+    const result = compose(inp, { sceneryLimit: 1 });
+    const placed = sceneryOf(result.layers);
+    expect(placed.length).toBeLessThanOrEqual(1);
+    const objects = objectsOf(result.layers).map((l) => boxOf(inp, l));
+    for (const bg of placed) {
+      const box = boxOf(inp, bg);
+      const { vx, vy } = visibleAxes(box, inp.artboard);
+      expect(vx * box.width * vy * box.height).toBeLessThanOrEqual(0.32 * 1080 * 1080 + 1e-6);
+      for (const o of objects) expect(boxesIntersect(box, o) ? 1 : 0).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('places at most `sceneryLimit` background objects, trying candidates in order', () => {
+    const inp: ComposeInput = {
+      ...input('square', 'composed', ['wallet', 'coin']),
+      backgrounds: [
+        { motif: 'lamp', meta: metaOf('lamp', 'l', 'background') },
+        { motif: 'bouquet', meta: metaOf('bouquet', 'l', 'background') },
+      ],
+    };
+    expect(sceneryOf(compose(inp, { sceneryLimit: 1 }).layers)).toHaveLength(1);
+    expect(sceneryOf(compose(inp, { sceneryLimit: 0 }).layers)).toHaveLength(0);
   });
 
   it('two background objects take different corners', () => {

@@ -262,8 +262,10 @@ export interface DocState {
   layout: LayoutMode;
   colorMode: ColorMode;
   paletteId: string;
-  /** Optional decorative background-variant echoes behind the objects (layers with role `background`). */
+  /** Optional background object behind the scene (another library object in its outline variant, role `background`). */
   backgroundObjects: boolean;
+  /** Background object chosen for the brief's meaning (by the LLM); the layout falls back to its own table. */
+  scenery?: MotifId;
   /** Optional palette plane under everything (`plane-<palette.plane>-<detail>.svg`, cover-fitted). */
   showPlane: boolean;
   /** Show the headline guide in the preview (never exported). */

@@ -673,7 +673,8 @@ describe('echo geometry', () => {
       layers: base.layers.map((l) => ({ ...l, x: 1_000_000, y: -1_000_000, size: 9999 })),
     };
     const next = withBackgroundObjects(wild, FILES, true);
-    expect(next.layers.filter((l) => l.role === 'background')).toHaveLength(1);
+    // At this scale any background object would swallow the frame, so none is added; the document stays valid.
+    expect(next.layers.filter((l) => l.role === 'background')).toHaveLength(0);
     expect(validateDoc(next)).not.toBeNull();
   });
 

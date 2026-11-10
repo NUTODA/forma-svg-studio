@@ -121,6 +121,7 @@ export function validateDoc(value: unknown): DocState | null {
   const backgroundObjects = own(value, 'backgroundObjects');
   const showPlane = own(value, 'showPlane');
   const showHeadline = own(value, 'showHeadline');
+  const scenery = oneOf(own(value, 'scenery'), MOTIF_IDS);
 
   if (!preset || !detail || !layout || !colorMode || !paletteId || headline === null || !brief || !layers) return null;
   if (typeof backgroundObjects !== 'boolean' || typeof showPlane !== 'boolean' || typeof showHeadline !== 'boolean') {
@@ -145,5 +146,6 @@ export function validateDoc(value: unknown): DocState | null {
     brief,
     layers,
     nextId,
+    ...(scenery ? { scenery } : {}),
   };
 }

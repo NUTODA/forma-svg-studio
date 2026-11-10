@@ -57,6 +57,8 @@ export interface ComposeLayersInput {
   detail: Detail;
   colorMode: ColorMode;
   backgroundObjects: boolean;
+  /** Preferred background object (chosen for the meaning of the brief). */
+  scenery?: MotifId;
   /** Parallel to `motifs`: objects the user hid. They keep their slot in the layout but get no echo. */
   hidden?: readonly boolean[];
   /** Indices into `motifs` from the bottom of the stack to the top; replaces the art-directed z-order. */
@@ -78,6 +80,8 @@ function artboardOf(preset: ArtboardPresetId): Size {
 
 /** One background object behind the scene, as in the reference sheets. */
 export const SCENERY_COUNT = 1;
+/** Candidates offered to the layout, best first: it takes the first one that stays secondary. */
+const SCENERY_CANDIDATES = 4;
 
 /** Background objects for these visible motifs: other library objects that have a background file. */
 function sceneryItems(
@@ -86,12 +90,16 @@ function sceneryItems(
   detail: Detail,
   colorMode: ColorMode,
   room: number,
+  preferredScenery?: MotifId,
 ): ComposeItem[] {
   if (visibleMotifs.length === 0) return [];
   const variant = variantForLayer('background', colorMode);
   const out: ComposeItem[] = [];
-  for (const motif of sceneryCandidates(visibleMotifs)) {
-    if (out.length >= Math.min(SCENERY_COUNT, room)) break;
+  if (room < 1) return [];
+  const preferred = preferredScenery && !visibleMotifs.includes(preferredScenery) ? [preferredScenery] : [];
+  for (const motif of [...preferred, ...sceneryCandidates(visibleMotifs)]) {
+    if (out.length >= SCENERY_CANDIDATES) break;
+    if (out.some((it) => it.motif === motif)) continue;
     const resolved = resolveAsset(files, motif, detail, variant);
     if (resolved?.exact !== false && resolved) out.push({ motif, meta: resolved.meta });
   }
@@ -137,6 +145,7 @@ function composeParts(input: ComposeLayersInput): { parts: ComposedPart[]; zones
         detail,
         colorMode,
         MAX_LAYERS - items.length,
+        input.scenery,
       )
     : [];
 
@@ -147,7 +156,7 @@ function composeParts(input: ComposeLayersInput): { parts: ComposedPart[]; zones
   });
   const result = compose(
     { items, backgrounds, artboard: artboardOf(input.preset), mode: input.layout },
-    { stacking },
+    { stacking, sceneryLimit: Math.min(SCENERY_COUNT, MAX_LAYERS - items.length) },
   );
   const parts = result.layers.map((placed): ComposedPart => {
     // A background object belongs to the scene as a whole; it is attributed to the hero.
@@ -201,6 +210,7 @@ function settingsOf(doc: DocState, files: readonly AssetFileMeta[], motifs: Moti
     detail: doc.detail,
     colorMode: doc.colorMode,
     backgroundObjects: doc.backgroundObjects,
+    ...(doc.scenery ? { scenery: doc.scenery } : {}),
   };
 }
 
@@ -432,11 +442,16 @@ export function withBackgroundObjects(doc: DocState, files: readonly AssetFileMe
     if (resolved) boxes.push(layerBounds(layer, resolved.meta));
   }
   const scale = commonScale(doc, files);
-  const items = scale === null ? [] : sceneryItems(ranked.map((l) => l.motif), files, doc.detail, doc.colorMode, MAX_LAYERS - objects.length);
+  const items =
+    scale === null
+      ? []
+      : sceneryItems(ranked.map((l) => l.motif), files, doc.detail, doc.colorMode, MAX_LAYERS - objects.length, doc.scenery);
   const taken = new Set<string>();
   const scenery: Layer[] = [];
   let nextId = doc.nextId;
   items.forEach((item, rank) => {
+    // Candidates are tried in order; the first that stays secondary wins.
+    if (scenery.length >= SCENERY_COUNT) return;
     const placed = placeScenery(item.meta, scale as number, boxes, board, avoid, taken);
     if (!placed) return;
     taken.add(placed.corner);

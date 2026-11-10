@@ -63,6 +63,11 @@ const EXHAUSTIVE_MAX_ITEMS = 16;
 
 export interface ComposeOptions {
   /**
+   * `backgrounds` are candidates in order of preference; at most this many are placed (default: all).
+   * A candidate that would dominate the frame or lie under the objects is skipped for the next one.
+   */
+  sceneryLimit?: number;
+  /**
    * Preferred z-order of the objects as item indices, bottom first. It replaces the art-directed order (and
    * arrangements are scored against it); items it does not list go on top in index order.
    */
@@ -306,7 +311,9 @@ export function compose(input: ComposeInput, options: ComposeOptions = {}): Comp
   const avoid = mode === 'title' ? zones.headlineZone : null;
   const taken = new Set<string>();
   const scenery: PlacedLayer[] = [];
+  const limit = options.sceneryLimit ?? backgrounds.length;
   backgrounds.forEach((bg, rank) => {
+    if (scenery.length >= limit) return;
     const placed = placeScenery(bg.meta, scale, boxes, artboard, avoid, taken);
     if (!placed) return;
     taken.add(placed.corner);

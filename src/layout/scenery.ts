@@ -7,7 +7,11 @@ type Pose = Pick<PlacedLayer, 'x' | 'y' | 'rotation' | 'size'>;
  * Share of the background object, per axis, that stays inside the frame (the rest is cropped). The first
  * value is the reference look; smaller ones tuck it further into the corner when it would reach the headline.
  */
-const SCENERY_VISIBLE = [0.62, 0.48, 0.36] as const;
+const SCENERY_VISIBLE = [0.62, 0.5, 0.4, 0.3] as const;
+/** The visible part of the background object may take at most this share of the frame: it sets the scene, it does not lead it. */
+const MAX_FRAME_SHARE = 0.32;
+/** At most this share of the objects' area may lie over the background object (it belongs behind, not under them). */
+const MAX_UNDER_OBJECTS = 0.2;
 
 /**
  * Which other object of the library makes a good background for a hero (reference sheets: headphones in
@@ -50,7 +54,8 @@ function overlapArea(a: Box, b: Box): number {
  * Pose of a background object: same common scale as the scene (`scale` = rendered size per source unit, so
  * relative proportions stay those of the library), upright, tucked into the frame corner that leaves the
  * scene most readable and cropped by it. Corners whose box would touch `avoid` (headline zone) are skipped;
- * `taken` corners (other background objects) too. Null when no corner leaves the headline free.
+ * `taken` corners (other background objects) too. It must stay secondary: its visible part is at most
+ * MAX_FRAME_SHARE of the frame and it may not lie under the objects. Null when no corner satisfies that.
  */
 export function placeScenery(
   meta: AssetFileMeta,
@@ -63,6 +68,8 @@ export function placeScenery(
   const size = scale * meta.bounds.height;
   const width = scale * meta.bounds.width;
   const group = objects.length > 0 ? unionBox(objects) : null;
+  const objectsArea = objects.reduce((sum, b) => sum + b.width * b.height, 0);
+  const frameArea = artboard.width * artboard.height;
   for (const visible of SCENERY_VISIBLE) {
     const hidden = 1 - visible;
     let best: { pose: Pose; corner: Corner; cost: number } | null = null;
@@ -72,14 +79,17 @@ export function placeScenery(
       const y = corner.startsWith('t') ? -hidden * size : artboard.height - visible * size;
       const box: Box = { x, y, width, height: size };
       if (avoid && boxesIntersect(box, avoid)) continue;
-      // Least covered by the scene; ties keep the corner order (top-left first, as in the references).
+      const shown = Math.min(width * visible, artboard.width) * Math.min(size * visible, artboard.height);
+      if (shown > MAX_FRAME_SHARE * frameArea) continue;
       const covered = objects.reduce((sum, b) => sum + overlapArea(box, b), 0);
+      if (objectsArea > 0 && covered > MAX_UNDER_OBJECTS * objectsArea) continue;
+      // Least covered by the scene; ties keep the corner order (top-left first, as in the references).
       const far = group ? -Math.hypot(x + width / 2 - (group.x + group.width / 2), y + size / 2 - (group.y + group.height / 2)) : 0;
       const cost = covered / Math.max(width * size, 1e-9) + 1e-6 * far;
       if (!best || cost < best.cost - 1e-9) best = { pose: { x: x + width / 2, y: y + size / 2, rotation: 0, size }, corner, cost };
     }
     if (best) return { ...best.pose, corner: best.corner };
   }
-  // Every corner would reach the headline: no background object rather than one over the text.
+  // No corner keeps it modest, clear of the objects and of the headline: better none than one that dominates.
   return null;
 }

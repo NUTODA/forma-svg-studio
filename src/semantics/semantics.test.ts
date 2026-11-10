@@ -76,12 +76,23 @@ describe('analyzeTitle', () => {
   it.each([
     ['Знания по кусочкам', ['puzzle', 'book']],
     ['Как мы учились по шагам', ['puzzle', 'book']],
-    ['Эффект домино', ['puzzle']],
-    ['Учиться слышать себя', ['headphones']],
   ] as const)('interprets «%s» as %j', (title, motifs) => {
     const result = analyzeTitle(title, ALL);
     expect(result.selected).toEqual(motifs);
     expect(result.fallbackUsed).toBe(false);
+  });
+
+  it.each([
+    ['Эффект домино', 'puzzle'],
+    ['Учиться слышать себя', 'headphones'],
+    ['О пользе наушников', 'headphones'],
+    ['Как накопить на поездку', 'coin'],
+    ['Подарок маме на 8 марта', 'bouquet'],
+  ] as const)('a one-object reading of «%s» keeps %s as the hero and gets a companion', (title, hero) => {
+    const result = analyzeTitle(title, ALL);
+    expect(result.selected[0]).toBe(hero);
+    expect(result.selected).toHaveLength(2);
+    expect(new Set(result.selected).size).toBe(2);
   });
 
   it.each([
@@ -99,7 +110,7 @@ describe('analyzeTitle', () => {
 
   it('handles case, ё and inflected forms of names', () => {
     expect(analyzeTitle('КОШЕЛЁК и КОШЕЛЬКА', ALL).selected).toContain('wallet');
-    expect(analyzeTitle('О пользе наушников', ALL).selected).toEqual(['headphones']);
+    expect(analyzeTitle('О пользе наушников', ALL).selected[0]).toBe('headphones');
     expect(analyzeTitle('Без ё: кошелек', ALL).selected).toContain('wallet');
   });
 

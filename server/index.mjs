@@ -20,6 +20,8 @@ loadEnvFile(path.join(root, '.env'));
 
 const { LLM_BASE_URL, LLM_API_KEY, LLM_API_KEY_HEADER, LLM_STEP_MODEL, LLM_EXTRA_BODY } = process.env;
 const MODEL = process.env.FORMA_LLM_MODEL || LLM_STEP_MODEL;
+// Tried when the main model fails or is slow (shared marketplaces have cold starts of 10–15 s).
+const FALLBACK_MODEL = process.env.FORMA_LLM_FALLBACK_MODEL || '';
 const enabled = Boolean(LLM_BASE_URL && LLM_API_KEY && MODEL);
 // Extra request fields: FORMA_LLM_EXTRA_BODY wins; LLM_EXTRA_BODY applies only to its own default model.
 let extra = {};
@@ -30,8 +32,8 @@ try {
   extra = {};
 }
 const PORT = Number(process.env.PORT || 8787);
-// Interactive budget: past this the client falls back to the rule-based pick.
-const TIMEOUT_MS = 9000;
+// Per-model budget; with the fallback the worst case stays under the client's own timeout.
+const TIMEOUT_MS = 8000;
 
 // Naive per-IP limiter (20 requests / minute) so a public demo cannot drain the quota.
 const hits = new Map();
@@ -71,6 +73,17 @@ async function interpret(req, res) {
     return send(res, 400, { error: 'bad-json' });
   }
   if (parsed.error) return send(res, 400, { error: parsed.error });
+  const models = [MODEL, FALLBACK_MODEL].filter((m, i, all) => m && all.indexOf(m) === i);
+  let lastError = 'upstream-failed';
+  for (const model of models) {
+    const result = await ask(model, parsed);
+    if (result.answer) return send(res, 200, { ...result.answer, model });
+    lastError = result.error;
+  }
+  return send(res, lastError === 'upstream-timeout' ? 504 : 502, { error: lastError });
+}
+
+async function ask(model, parsed) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -82,22 +95,27 @@ async function interpret(req, res) {
         [LLM_API_KEY_HEADER || 'Authorization']: LLM_API_KEY_HEADER ? LLM_API_KEY : `Bearer ${LLM_API_KEY}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         messages: buildMessages(parsed.title, parsed.catalog),
         max_tokens: 800,
-        ...extra,
+        ...(model === MODEL ? extra : {}),
       }),
     });
-    if (!upstream.ok) return send(res, 502, { error: 'upstream', status: upstream.status });
+    if (!upstream.ok) return { error: 'upstream' };
     const data = await upstream.json();
     const answer = parseAnswer(data?.choices?.[0]?.message?.content, parsed.catalog);
-    if (!answer) return send(res, 502, { error: 'bad-answer' });
-    return send(res, 200, { objects: answer.objects, reason: answer.reason, model: MODEL });
+    return answer ? { answer } : { error: 'bad-answer' };
   } catch (error) {
-    return error?.name === 'AbortError' ? send(res, 504, { error: 'upstream-timeout' }) : send(res, 502, { error: 'upstream-failed' });
+    return { error: error?.name === 'AbortError' ? 'upstream-timeout' : 'upstream-failed' };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Wake the model up so the first real request does not pay the cold start. */
+function warmUp() {
+  if (!enabled) return;
+  void ask(MODEL, { title: 'Знания по кусочкам', catalog: [{ id: 'book', name: 'Книга', description: 'знания' }, { id: 'puzzle', name: 'Пазлы', description: 'части целого' }] });
 }
 
 function serveStatic(req, res) {
@@ -121,4 +139,4 @@ http
     if (process.env.FORMA_API_ONLY) return send(res, 404, { error: 'not-found' });
     return serveStatic(req, res);
   })
-  .listen(PORT, process.env.HOST || '127.0.0.1', () => console.log(`Forma server on http://${process.env.HOST || '127.0.0.1'}:${PORT} (LLM ${enabled ? 'on: ' + MODEL : 'off'})`));
+  .listen(PORT, process.env.HOST || '127.0.0.1', () => (warmUp(), console.log(`Forma server on http://${process.env.HOST || '127.0.0.1'}:${PORT} (LLM ${enabled ? 'on: ' + MODEL + (FALLBACK_MODEL ? ', fallback ' + FALLBACK_MODEL : '') : 'off'})`)));

@@ -28,12 +28,17 @@ describe('llm adapter', () => {
     expect(merged.matches.slice(0, 2).map((m) => m.motif)).toEqual(['lamp', 'pen']);
   });
 
-  it('asks the model only when the rules are unsure', () => {
+  it('asks the model for every usable title', () => {
     const all = new Set<MotifId>(['book', 'puzzle', 'lamp', 'pen', 'coin', 'wallet', 'phone', 'headphones']);
-    expect(needsLlm(analyzeTitle('Знания по кусочкам', all))).toBe(false);
-    expect(needsLlm(analyzeTitle('asdfgh qwerty', all))).toBe(true);
-    expect(needsLlm(analyzeTitle('Свет в конце тоннеля', all))).toBe(true);
+    expect(needsLlm(analyzeTitle('Знания по кусочкам', all))).toBe(true);
+    expect(needsLlm(analyzeTitle('Как накопить на поездку', all))).toBe(true);
     expect(needsLlm(analyzeTitle('   ', all))).toBe(false);
+  });
+
+  it('keeps a background pick only when it is available and not in the scene', () => {
+    expect(sanitizePick({ objects: ['puzzle'], background: 'book' }, ALL)?.scenery).toBe('book');
+    expect(sanitizePick({ objects: ['puzzle'], background: 'puzzle' }, ALL)?.scenery).toBeUndefined();
+    expect(sanitizePick({ objects: ['puzzle'], background: 'coin' }, ALL)?.scenery).toBeUndefined();
   });
 
   it('keeps sure objects first and never restores excluded ones', () => {

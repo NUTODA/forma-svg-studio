@@ -9,10 +9,12 @@ import { MOTIF_IDS, type MotifId, type TitleAnalysis } from '../domain/types';
 export interface LlmPick {
   motifs: MotifId[];
   reason: string;
+  /** Background object that sets the scene (not one of `motifs`). */
+  scenery?: MotifId;
 }
 
 /** Slightly above the server's own upstream timeout. */
-const TIMEOUT_MS = 10000;
+const TIMEOUT_MS = 18000;
 let health: Promise<boolean> | null = null;
 
 /** Whether the server has an LLM configured (cached; false on static hosting). */
@@ -31,7 +33,7 @@ export function resetLlmProbe(): void {
 /** Keeps only known, available, distinct motifs (max 4); null if nothing valid is left. */
 export function sanitizePick(raw: unknown, available: ReadonlySet<MotifId>): LlmPick | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { objects, reason } = raw as { objects?: unknown; reason?: unknown };
+  const { objects, reason, background } = raw as { objects?: unknown; reason?: unknown; background?: unknown };
   if (!Array.isArray(objects)) return null;
   const motifs: MotifId[] = [];
   for (const id of objects) {
@@ -41,7 +43,12 @@ export function sanitizePick(raw: unknown, available: ReadonlySet<MotifId>): Llm
     if (motifs.length >= 4) break;
   }
   if (motifs.length === 0) return null;
-  return { motifs, reason: typeof reason === 'string' ? reason.trim().slice(0, 160) : '' };
+  const pick: LlmPick = { motifs, reason: typeof reason === 'string' ? reason.trim().slice(0, 160) : '' };
+  const bg = background as MotifId;
+  if (typeof background === 'string' && (MOTIF_IDS as readonly string[]).includes(background) && available.has(bg) && !motifs.includes(bg)) {
+    pick.scenery = bg;
+  }
+  return pick;
 }
 
 export async function requestLlmPick(title: string, available: ReadonlySet<MotifId>): Promise<LlmPick | null> {
@@ -70,12 +77,12 @@ export async function requestLlmPick(title: string, available: ReadonlySet<Motif
 const MAX_MERGED = 3;
 
 /**
- * The rules are instant and deterministic, so the model is asked only when they are unsure:
- * nothing matched, the best match is not a strong one, or a single object was found.
+ * Whether to ask the model. The rules match words; the model reads the metaphor and builds a scene of
+ * 2–3 objects plus a fitting background, so every title is sent when a model is configured. Input the
+ * rules reject as empty or unusable is not sent.
  */
 export function needsLlm(analysis: TitleAnalysis): boolean {
-  if (analysis.selected.length === 0) return false; // empty or unusable input: nothing to interpret
-  return analysis.fallbackUsed || analysis.matches[0]?.strength !== 'strong' || analysis.selected.length < 2;
+  return analysis.selected.length > 0;
 }
 
 /**

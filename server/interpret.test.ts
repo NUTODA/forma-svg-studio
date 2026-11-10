@@ -35,6 +35,13 @@ describe('server/interpret', () => {
     expect(parseAnswer(text, catalog)).toEqual({ objects: ['puzzle', 'book'], reason: 'Части складываются в целое' });
   });
 
+  it('keeps a background object only when it is in the catalog and not already in the scene', () => {
+    const three = [...catalog, { id: 'lamp', name: 'Лампа', description: 'свет' }];
+    expect(parseAnswer('{"objects":["book"],"background":"lamp","reason":""}', three)).toEqual({ objects: ['book'], background: 'lamp', reason: '' });
+    expect(parseAnswer('{"objects":["book"],"background":"book","reason":""}', three)).toEqual({ objects: ['book'], reason: '' });
+    expect(parseAnswer('{"objects":["book"],"background":"rocket","reason":""}', three)).toEqual({ objects: ['book'], reason: '' });
+  });
+
   it('rejects garbage', () => {
     for (const bad of [undefined, '', 'нет json', '{"objects":"book"}', '{"objects":["rocket"]}', '{oops}']) {
       expect(parseAnswer(bad as string, catalog)).toBeNull();

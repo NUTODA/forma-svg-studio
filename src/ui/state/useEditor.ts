@@ -484,8 +484,11 @@ export function useEditor(): EditorApi {
       // «Собрать» always produces the reference look: palette plane plus a background object.
       // Both can be switched off afterwards; «Перекомпоновать» keeps whatever the user chose.
       const look = { showPlane: true, backgroundObjects: true };
+      // The model may also choose the background object; otherwise the layout's own table decides.
+      const { scenery: _previous, ...rest } = base;
+      const scenery = pick && result.mode === 'title' ? pick.scenery : undefined;
       const next = docFromMotifs(
-        { ...base, ...look, brief: { mode, text }, headline: headlineForBrief(mode, text) },
+        { ...rest, ...look, ...(scenery ? { scenery } : {}), brief: { mode, text }, headline: headlineForBrief(mode, text) },
         motifs,
         files,
       );
