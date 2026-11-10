@@ -152,7 +152,9 @@ export function PaletteImport({ onClose }: PaletteImportProps): JSX.Element {
     const { palette } = validation;
     api.addCustomPalette(palette);
     api.setPalette(palette.id);
-    onClose();
+    // Close the modal first; its `close` event calls onClose, which can then return focus to the opener
+    // (focusing while the modal is still open is a no-op because the page behind it is inert).
+    dialogRef.current?.close();
     api.announce(`Палитра «${palette.name}» добавлена`, 'success');
   };
 

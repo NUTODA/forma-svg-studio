@@ -1,4 +1,5 @@
 import type { DocState, Layer } from '../domain/types';
+import { MAX_COORD, MAX_LAYERS } from './validate';
 
 export interface History<T> {
   past: T[];
@@ -94,10 +95,13 @@ function withValidSelection(state: EditorState): EditorState {
 }
 
 /** Normalised copy of a layer with the patch applied (non-finite numbers and non-positive sizes are ignored). */
+/** Same bounds the draft validator enforces, so every state the editor can reach can be restored. */
+const clampCoord = (value: number): number => Math.max(-MAX_COORD, Math.min(MAX_COORD, value));
+
 function patchLayer(layer: Layer, patch: LayerPatch): Layer {
   const next: Layer = { ...layer };
-  if (patch.x !== undefined && Number.isFinite(patch.x)) next.x = patch.x;
-  if (patch.y !== undefined && Number.isFinite(patch.y)) next.y = patch.y;
+  if (patch.x !== undefined && Number.isFinite(patch.x)) next.x = clampCoord(patch.x);
+  if (patch.y !== undefined && Number.isFinite(patch.y)) next.y = clampCoord(patch.y);
   if (patch.rotation !== undefined && Number.isFinite(patch.rotation)) next.rotation = (patch.rotation % 360) + 0;
   if (patch.size !== undefined && Number.isFinite(patch.size) && patch.size > 0) {
     next.size = Math.min(patch.size, MAX_LAYER_SIZE);
@@ -183,7 +187,7 @@ function step(state: EditorState, action: EditorAction): EditorState {
     }
 
     case 'addLayers': {
-      if (action.layers.length === 0) return state;
+      if (action.layers.length === 0 || doc.layers.length + action.layers.length > MAX_LAYERS) return state;
       const added = action.layers.map((l, i): Layer => ({ ...l, id: `l${doc.nextId + i}` }));
       const next: DocState = { ...doc, layers: [...doc.layers, ...added], nextId: doc.nextId + added.length };
       const committed = commit(state, next);
@@ -208,7 +212,7 @@ function step(state: EditorState, action: EditorAction): EditorState {
     case 'duplicateLayer': {
       const index = doc.layers.findIndex((l) => l.id === action.id);
       const original = doc.layers[index];
-      if (!original) return state;
+      if (!original || doc.layers.length >= MAX_LAYERS) return state;
       const offset = Number.isFinite(action.offset) ? action.offset : 0;
       const copy: Layer = { ...original, id: `l${doc.nextId}`, x: original.x + offset, y: original.y + offset };
       const layers = [...doc.layers.slice(0, index + 1), copy, ...doc.layers.slice(index + 1)];

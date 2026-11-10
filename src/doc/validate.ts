@@ -15,7 +15,7 @@ export const MAX_LAYERS = 500;
 export const MAX_BRIEF_CHARS = 2000;
 export const MAX_HEADLINE_CHARS = 500;
 export const MAX_ID_CHARS = 64;
-const MAX_COORD = 1_000_000;
+export const MAX_COORD = 1_000_000;
 const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
 
 const PRESETS: readonly ArtboardPresetId[] = ['square', 'portrait', 'og'];

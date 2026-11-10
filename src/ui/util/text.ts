@@ -1,7 +1,13 @@
-/** Replace the first case-insensitive occurrence of `token`; returns the text unchanged when absent. */
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Replace the first case-insensitive occurrence of `token` as a whole word (so «кни» never edits
+ * «книга»), falling back to a plain substring match; returns the text unchanged when absent.
+ */
 export function replaceFirstOccurrence(text: string, token: string, replacement: string): string {
   if (!token) return text;
-  const index = text.toLowerCase().indexOf(token.toLowerCase());
+  const word = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(token)}(?![\\p{L}\\p{N}])`, 'iu').exec(text);
+  const index = word ? word.index : text.toLowerCase().indexOf(token.toLowerCase());
   if (index < 0) return text;
   return text.slice(0, index) + replacement + text.slice(index + token.length);
 }

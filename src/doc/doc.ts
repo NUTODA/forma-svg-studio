@@ -136,7 +136,15 @@ function settingsOf(doc: DocState, files: readonly AssetFileMeta[], motifs: Moti
 /** Re-run the layout for the document's current motifs and settings (used by preset/layout/echo changes). */
 export function recomposeDoc(doc: DocState, files: readonly AssetFileMeta[]): DocState {
   const result = composeLayers(settingsOf(doc, files, objectMotifs(doc)), doc.nextId);
-  return { ...doc, layers: result.layers, nextId: result.nextId };
+  // New object layer with rank i stands for the i-th old object by rank: keep what the user hid hidden.
+  const hiddenByRank = doc.layers
+    .filter((l) => l.role === 'object')
+    .sort((a, b) => a.rank - b.rank)
+    .map((l) => l.hidden === true);
+  const layers = result.layers.map((l) =>
+    l.role === 'object' && hiddenByRank[l.rank] ? { ...l, hidden: true } : l,
+  );
+  return { ...doc, layers, nextId: result.nextId };
 }
 
 function median(values: number[]): number {

@@ -465,3 +465,18 @@ describe('withBackgroundObjects', () => {
     expect(next.nextId).toBe(1);
   });
 });
+
+describe('recomposeDoc keeps user decisions', () => {
+  it('hidden objects stay hidden after a format change', () => {
+    const base = docFromMotifs(createDoc(), ['book', 'coin', 'lamp'], FILES);
+    const coin = base.layers.find((l) => l.motif === 'coin');
+    expect(coin).toBeDefined();
+    const hidden: DocState = {
+      ...base,
+      layers: base.layers.map((l) => (l.id === coin?.id ? { ...l, hidden: true } : l)),
+    };
+    const next = recomposeDoc({ ...hidden, preset: 'portrait' }, FILES);
+    expect(next.layers.find((l) => l.motif === 'coin')?.hidden).toBe(true);
+    expect(next.layers.filter((l) => l.motif !== 'coin').every((l) => !l.hidden)).toBe(true);
+  });
+});

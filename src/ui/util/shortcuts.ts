@@ -36,10 +36,15 @@ export function needsSelection(command: ShortcutCommand): boolean {
   }
 }
 
-/** Letter of a physical key regardless of keyboard layout (works with the Russian layout). */
+/**
+ * Letter of a shortcut: the typed Latin letter when there is one (QWERTZ/AZERTY keep ⌘Z = undo),
+ * otherwise the physical key (so the Russian layout still works: ⌘Я → Z).
+ */
 function letterOf(e: KeyInfo): string {
+  const typed = e.key.toLowerCase();
+  if (/^[a-z]$/.test(typed)) return typed;
   if (e.code?.startsWith('Key')) return e.code.slice(3).toLowerCase();
-  return e.key.toLowerCase();
+  return typed;
 }
 
 function bracketOf(e: KeyInfo): 'left' | 'right' | null {

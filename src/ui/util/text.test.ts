@@ -48,3 +48,13 @@ describe('list formatting', () => {
     expect(formatUniqueList(['Монета', 'Книга', 'Монета'])).toBe('Монета, Книга');
   });
 });
+
+describe('replaceFirstOccurrence — whole words first', () => {
+  it('never edits a longer word that merely contains the token', () => {
+    expect(replaceFirstOccurrence('книга, кни', 'кни', 'Книга')).toBe('книга, Книга');
+  });
+
+  it('falls back to a substring when the token is not a separate word', () => {
+    expect(replaceFirstOccurrence('суперкнига', 'книга', 'Книга')).toBe('суперКнига');
+  });
+});

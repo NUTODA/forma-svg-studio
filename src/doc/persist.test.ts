@@ -4,8 +4,10 @@ import { allFileMetas } from '../layout/testMetas';
 import { BUILTIN_PALETTES } from '../palette/builtins';
 import { docFromMotifs, createDoc } from './doc';
 import {
+  DRAFT_BACKUP_KEY,
   DRAFT_KEY,
   PALETTES_KEY,
+  backupDraft,
   clearDraft,
   loadCustomPalettes,
   loadDraft,
@@ -155,5 +157,16 @@ describe('custom palettes persistence', () => {
   it('never throws when storage is full or blocked', () => {
     expect(saveCustomPalettes(throwing, [customPalette()])).toBe(false);
     expect(loadCustomPalettes(throwing)).toEqual([]);
+  });
+});
+
+describe('backupDraft', () => {
+  it('keeps an unreadable draft under a separate key', () => {
+    const store = new FakeStorage();
+    store.setItem(DRAFT_KEY, '{"version": 99}');
+    expect(loadDraft(store).status).toBe('invalid');
+    expect(backupDraft(store)).toBe(true);
+    expect(store.getItem(DRAFT_BACKUP_KEY)).toBe('{"version": 99}');
+    expect(backupDraft(new FakeStorage())).toBe(false);
   });
 });

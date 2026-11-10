@@ -11,7 +11,16 @@ import {
   withBackgroundObjects,
 } from '../../doc/doc';
 import { canRedo, canUndo, createEditorState, editorReducer, type EditorState } from '../../doc/editor';
-import { clearDraft, loadCustomPalettes, loadDraft, saveCustomPalettes, saveDraft, type DraftLoad } from '../../doc/persist';
+import {
+  backupDraft,
+  clearDraft,
+  DRAFT_BACKUP_KEY,
+  loadCustomPalettes,
+  loadDraft,
+  saveCustomPalettes,
+  saveDraft,
+  type DraftLoad,
+} from '../../doc/persist';
 import type {
   ArtboardPresetId,
   BriefMode,
@@ -23,6 +32,7 @@ import type {
   MotifId,
   Palette,
 } from '../../domain/types';
+import { MAX_LAYERS } from '../../doc/validate';
 import { buildExportSvg, requiredFiles, type RenderContext } from '../../export/render';
 import { ARTBOARD_PRESETS, getZones } from '../../layout/compose';
 import { BUILTIN_PALETTES, DEFAULT_PALETTE_ID } from '../../palette/builtins';
@@ -77,15 +87,19 @@ const available: ReadonlySet<MotifId> = new Set(availableMotifs(files));
 const metaByFile = new Map([...files, ...planes].map((meta) => [meta.file, meta] as const));
 
 function computeBoot(): Boot {
-  const draft = readDraft(getStorage());
+  const store = getStorage();
+  const draft = readDraft(store);
   if (draft.status === 'ok') {
     return { doc: draft.doc, brief: null, status: { id: 1, text: 'Черновик восстановлен', level: 'info' } };
   }
   if (draft.status === 'invalid') {
+    // Autosave will soon write a fresh document: keep the unreadable original instead of losing it.
+    const kept = store ? backupDraft(store) : false;
+    const note = kept ? ` Копия сохранена в браузере под ключом «${DRAFT_BACKUP_KEY}».` : '';
     return {
       doc: createDoc(),
       brief: null,
-      status: { id: 1, text: `Черновик не загружен — ${draft.reason}`, level: 'warning' },
+      status: { id: 1, text: `Черновик не загружен — ${draft.reason}${note}`, level: 'warning' },
     };
   }
   const first = DEMO_PRESETS[0];
@@ -94,6 +108,24 @@ function computeBoot(): Boot {
     return { doc: demo.doc, brief: demo.brief, status: null };
   }
   return { doc: createDoc(), brief: null, status: null };
+}
+
+/**
+ * After a layer disappears (delete) or its controls remount (duplicate), the focused element may
+ * be gone and focus falls to <body>. Return it to the canvas so keyboard work continues.
+ */
+function keepFocusOnCanvas(): void {
+  if (typeof window === 'undefined') return;
+  window.requestAnimationFrame(() => {
+    const active = document.activeElement;
+    if (active === null || active === document.body) document.getElementById('artboard')?.focus();
+  });
+}
+
+/** Layer commands act on the selection only when the user is working on the canvas or the layer list. */
+function isLayerCommandTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element) || target === document.body || target === document.documentElement) return true;
+  return target.closest('#artboard, .layers') !== null;
 }
 
 function errorText(error: unknown): string {
@@ -353,8 +385,13 @@ export function useEditor(): EditorApi {
     (id: string) => {
       const layer = layerOf(latest.current.state, id);
       if (!layer) return;
+      if (latest.current.state.history.present.layers.length >= MAX_LAYERS) {
+        announce(`На холсте уже ${MAX_LAYERS} слоёв — это предел`, 'warning');
+        return;
+      }
       dispatch({ type: 'duplicateLayer', id, offset: DUPLICATE_OFFSET });
       announce(`Дублировано: ${layerName(layer)}`);
+      keepFocusOnCanvas();
     },
     [announce],
   );
@@ -365,6 +402,7 @@ export function useEditor(): EditorApi {
       if (!layer) return;
       dispatch({ type: 'removeLayer', id });
       announce(`Удалено: ${layerName(layer)}`);
+      keepFocusOnCanvas();
     },
     [announce],
   );
@@ -377,15 +415,18 @@ export function useEditor(): EditorApi {
     dispatch({ type: 'updateLayer', id, patch: { hidden: !layer.hidden } });
   }, []);
 
+  // The analysis describes the composition it produced; after undo/redo it would offer stale actions.
   const undo = useCallback(() => {
     if (!canUndo(latest.current.state)) return;
     dispatch({ type: 'undo' });
+    setBrief(null);
     announce('Отменено');
   }, [announce]);
 
   const redo = useCallback(() => {
     if (!canRedo(latest.current.state)) return;
     dispatch({ type: 'redo' });
+    setBrief(null);
     announce('Повторено');
   }, [announce]);
 
@@ -595,8 +636,8 @@ export function useEditor(): EditorApi {
       const command = commandForKey(e);
       if (!command) return;
       const selectedId = latest.current.state.selectedId;
-      if (needsSelection(command) && selectedId === null) {
-        // Cmd/Ctrl+D would otherwise bookmark the page.
+      if (needsSelection(command) && (selectedId === null || !isLayerCommandTarget(e.target))) {
+        // Cmd/Ctrl+D would otherwise bookmark the page. Arrows/Delete on other controls keep their own meaning.
         if (command.type === 'duplicate') e.preventDefault();
         return;
       }

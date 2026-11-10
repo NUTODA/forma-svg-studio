@@ -395,3 +395,18 @@ describe('layer operations', () => {
     expect(ids(s)).toEqual(['l1', 'l2', 'l3']);
   });
 });
+
+describe('limits shared with the draft validator', () => {
+  it('clamps coordinates so every reachable state can be restored from a draft', () => {
+    let s = withLayers(1);
+    s = run(s, { type: 'updateLayer', id: 'l1', patch: { x: 5_000_000, y: -5_000_000 } });
+    expect(doc(s).layers[0]).toMatchObject({ x: 1_000_000, y: -1_000_000 });
+    expect(validateDoc(doc(s))).not.toBeNull();
+  });
+
+  it('refuses to grow past the layer limit', () => {
+    const full = withLayers(500);
+    const s = run(full, { type: 'addLayers', layers: [spec()] }, { type: 'duplicateLayer', id: 'l1', offset: 10 });
+    expect(s).toBe(full);
+  });
+});

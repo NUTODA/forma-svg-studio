@@ -61,6 +61,23 @@ export function saveDraft(store: WriteStore, doc: DocState): boolean {
   }
 }
 
+export const DRAFT_BACKUP_KEY = 'forma:draft:v1:backup';
+
+/**
+ * Keeps an unreadable draft under a separate key before autosave writes a fresh document over it.
+ * Returns false when there was nothing to keep or storage refused.
+ */
+export function backupDraft(store: Pick<Storage, 'getItem' | 'setItem'>): boolean {
+  const raw = readItem(store, DRAFT_KEY);
+  if (raw === null) return false;
+  try {
+    store.setItem(DRAFT_BACKUP_KEY, raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function clearDraft(store: WriteStore): void {
   try {
     store.removeItem(DRAFT_KEY);

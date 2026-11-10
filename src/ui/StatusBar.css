@@ -50,6 +50,17 @@
   background: var(--err-600);
 }
 
+/* Problems must not look like routine confirmations: colour and weight, not only the dot. */
+.statusbar__dot[data-level='error'] + .statusbar__label {
+  color: var(--err-600);
+  font-weight: 500;
+}
+
+.statusbar__dot[data-level='warning'] + .statusbar__label {
+  color: var(--warn-600);
+  font-weight: 500;
+}
+
 .statusbar__meta {
   display: flex;
   flex: none;

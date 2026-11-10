@@ -72,3 +72,15 @@ describe('needsSelection', () => {
     expect(needsSelection({ type: 'deselect' })).toBe(false);
   });
 });
+
+describe('keyboard layouts', () => {
+  it('uses the typed Latin letter on QWERTZ/AZERTY, the physical key on Cyrillic', () => {
+    // QWERTZ: the key labelled Z sits where QWERTY has Y.
+    expect(commandForKey(key('z', { code: 'KeyY', ctrlKey: true }))).toEqual({ type: 'undo' });
+    expect(commandForKey(key('y', { code: 'KeyZ', ctrlKey: true }))).toEqual({ type: 'redo' });
+    // AZERTY: Z is on the QWERTY W position.
+    expect(commandForKey(key('z', { code: 'KeyW', metaKey: true }))).toEqual({ type: 'undo' });
+    // Russian layout: «я» is on the Z key.
+    expect(commandForKey(key('я', { code: 'KeyZ', metaKey: true }))).toEqual({ type: 'undo' });
+  });
+});

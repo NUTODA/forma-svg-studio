@@ -71,6 +71,7 @@ type Gesture =
       id: string;
       pointerId: number;
       target: Element;
+      startClient: Point;
       centre: Point;
       start: Point;
       startRotation: number;
@@ -304,6 +305,7 @@ export function Artboard(): JSX.Element {
       id: layer.id,
       pointerId: e.pointerId,
       target: e.currentTarget,
+      startClient: { x: e.clientX, y: e.clientY },
       centre: { x: layer.x, y: layer.y },
       start,
       startRotation: layer.rotation,
@@ -333,6 +335,8 @@ export function Artboard(): JSX.Element {
       return;
     }
     if (!g.engaged) {
+      // Same threshold as moving: a click with a jittery hand must not rotate or add an undo step.
+      if (Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y) < DRAG_THRESHOLD) return;
       g.engaged = true;
       setGesture('rotate');
     }

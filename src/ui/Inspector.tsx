@@ -18,6 +18,12 @@ import {
   IconTrash,
 } from './icons';
 import { NumberField } from './NumberField';
+import { detectMac, modShortcut } from './chromeKeys';
+
+// Platform is fixed for the session: «⌘D / ⌫» on Mac, «Ctrl+D / Delete» elsewhere.
+const IS_MAC = detectMac();
+const DUPLICATE_HINT = modShortcut(IS_MAC, 'D');
+const DELETE_HINT = IS_MAC ? '⌫' : 'Delete';
 import {
   COLOR_MODE_LABEL,
   DETAIL_LABEL,
@@ -120,7 +126,7 @@ function LayerProperties({ layer, api }: { layer: Layer; api: EditorApi }): JSX.
       </div>
 
       <div className="inspector__actions" role="group" aria-label="Действия с объектом">
-        <ActionButton label="Дублировать" shortcut="⌘D" icon={<IconDuplicate />} onClick={() => api.duplicate(layer.id)} />
+        <ActionButton label="Дублировать" shortcut={DUPLICATE_HINT} icon={<IconDuplicate />} onClick={() => api.duplicate(layer.id)} />
         <span className="inspector__sep" aria-hidden="true" />
         <ActionButton label="Выше" icon={<IconArrowUp />} disabled={isTop} onClick={() => api.reorder(layer.id, 'up')} />
         <ActionButton label="Ниже" icon={<IconArrowDown />} disabled={isBottom} onClick={() => api.reorder(layer.id, 'down')} />
@@ -132,7 +138,7 @@ function LayerProperties({ layer, api }: { layer: Layer; api: EditorApi }): JSX.
           icon={layer.hidden ? <IconEyeOff /> : <IconEye />}
           onClick={() => api.toggleHidden(layer.id)}
         />
-        <ActionButton label="Удалить" shortcut="⌫" icon={<IconTrash />} danger onClick={() => api.remove(layer.id)} />
+        <ActionButton label="Удалить" shortcut={DELETE_HINT} icon={<IconTrash />} danger onClick={() => api.remove(layer.id)} />
       </div>
     </div>
   );

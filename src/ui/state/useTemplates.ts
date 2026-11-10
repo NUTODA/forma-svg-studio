@@ -9,10 +9,12 @@ type TemplateMap = ReadonlyMap<string, SvgTemplate>;
 
 /** Coalesces arrivals of several templates into one React update. */
 const FLUSH_DELAY_MS = 16;
+/** A failed file is retried on the next request after this pause (a transient network error is not permanent). */
+const RETRY_AFTER_MS = 4000;
 
 export interface TemplateStore {
   templates: TemplateMap;
-  /** Fire-and-forget loading (thumbnails, artboard). Unknown, loaded, loading and failed files are skipped. */
+  /** Fire-and-forget loading (thumbnails, artboard). Unknown, loaded, loading and just-failed files are skipped. */
   requestTemplates(files: readonly string[]): void;
   /** Resolves with every template loaded so far once all `files` are available; rejects naming the first failure. */
   ensureTemplates(files: readonly string[]): Promise<TemplateMap>;
@@ -25,7 +27,8 @@ export function useTemplates(
   const [templates, setTemplates] = useState<TemplateMap>(() => new Map());
   const loaded = useRef(new Map<string, SvgTemplate>());
   const inflight = useRef(new Map<string, Promise<boolean>>());
-  const failed = useRef(new Set<string>());
+  /** File → time of the last failure. */
+  const failed = useRef(new Map<string, number>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(false);
 
@@ -65,7 +68,7 @@ export function useTemplates(
             return true;
           },
           () => {
-            failed.current.add(file);
+            failed.current.set(file, Date.now());
             if (mounted.current) announce(`Не удалось загрузить ${file}`, 'error');
             return false;
           },
@@ -80,7 +83,8 @@ export function useTemplates(
   const requestTemplates = useCallback(
     (files: readonly string[]) => {
       for (const file of new Set(files)) {
-        if (failed.current.has(file)) continue;
+        const failedAt = failed.current.get(file);
+        if (failedAt !== undefined && Date.now() - failedAt < RETRY_AFTER_MS) continue;
         void start(file);
       }
     },

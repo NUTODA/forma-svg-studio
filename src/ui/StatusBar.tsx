@@ -32,7 +32,8 @@ export function StatusBar(): JSX.Element {
     <div className="statusbar">
       <div className="statusbar__message" role="status" aria-live="polite" aria-atomic="true">
         {status ? (
-          <span key={status.id} className="statusbar__text">
+          // Errors are announced once, by the alert below; the polite region only shows them.
+          <span key={status.id} className="statusbar__text" aria-hidden={status.level === 'error' ? true : undefined}>
             <span className="statusbar__dot" data-level={status.level} aria-hidden="true" />
             <span className="statusbar__label">{status.text}</span>
           </span>
