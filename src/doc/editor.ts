@@ -1,4 +1,3 @@
-// CONTRACT STUB — owned by the doc/layout agent. Signatures are fixed; bodies to be implemented.
 import type { DocState, Layer } from '../domain/types';
 
 export interface History<T> {
@@ -55,18 +54,220 @@ export type EditorAction =
   | { type: 'undo' }
   | { type: 'redo' };
 
-export function createEditorState(_doc: DocState): EditorState {
-  throw new Error('not implemented');
+export function createEditorState(doc: DocState): EditorState {
+  return { history: { past: [], present: doc, future: [] }, selectedId: null, gestureBase: null, lastCoalesce: null };
 }
 
-export function editorReducer(_state: EditorState, _action: EditorAction): EditorState {
-  throw new Error('not implemented');
+export function canUndo(state: EditorState): boolean {
+  return state.history.past.length > 0;
 }
 
-export function canUndo(_state: EditorState): boolean {
-  throw new Error('not implemented');
+export function canRedo(state: EditorState): boolean {
+  return state.history.future.length > 0;
 }
 
-export function canRedo(_state: EditorState): boolean {
-  throw new Error('not implemented');
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+const MAX_LAYER_SIZE = 9999;
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const keys = Object.keys(ao).filter((k) => ao[k] !== undefined);
+  const otherKeys = Object.keys(bo).filter((k) => bo[k] !== undefined);
+  if (keys.length !== otherKeys.length) return false;
+  return keys.every((k) => Object.hasOwn(bo, k) && deepEqual(ao[k], bo[k]));
+}
+
+function hasLayer(doc: DocState, id: string | null): boolean {
+  return id !== null && doc.layers.some((l) => l.id === id);
+}
+
+/** Selection survives only while its layer exists. */
+function withValidSelection(state: EditorState): EditorState {
+  return hasLayer(state.history.present, state.selectedId) ? state : { ...state, selectedId: null };
+}
+
+/** Normalised copy of a layer with the patch applied (non-finite numbers and non-positive sizes are ignored). */
+function patchLayer(layer: Layer, patch: LayerPatch): Layer {
+  const next: Layer = { ...layer };
+  if (patch.x !== undefined && Number.isFinite(patch.x)) next.x = patch.x;
+  if (patch.y !== undefined && Number.isFinite(patch.y)) next.y = patch.y;
+  if (patch.rotation !== undefined && Number.isFinite(patch.rotation)) next.rotation = (patch.rotation % 360) + 0;
+  if (patch.size !== undefined && Number.isFinite(patch.size) && patch.size > 0) {
+    next.size = Math.min(patch.size, MAX_LAYER_SIZE);
+  }
+  if (patch.hidden === true) next.hidden = true;
+  else if (patch.hidden === false) delete next.hidden;
+  return next;
+}
+
+function mapLayer(doc: DocState, id: string, fn: (layer: Layer) => Layer): DocState {
+  return { ...doc, layers: doc.layers.map((l) => (l.id === id ? fn(l) : l)) };
+}
+
+/** Push `next` as a new undo step, or merge into the present when `key` repeats. */
+function commit(initial: EditorState, next: DocState, key: string | null = null): EditorState {
+  // Any action without a coalescing key ends the current coalescing run, even when it changes nothing.
+  const state = key === null && initial.lastCoalesce !== null ? { ...initial, lastCoalesce: null } : initial;
+  const { past, present } = state.history;
+  if (deepEqual(next, present)) return state;
+  const merge = key !== null && key === state.lastCoalesce;
+  const nextPast = merge ? past : [...past, present].slice(-HISTORY_LIMIT);
+  return {
+    ...state,
+    history: { past: nextPast, present: next, future: [] },
+    lastCoalesce: key,
+  };
+}
+
+/** A gesture interrupted by another action is committed as one step first. */
+function finishGesture(state: EditorState): EditorState {
+  if (!state.gestureBase) return state;
+  const { past, present } = state.history;
+  const base = state.gestureBase;
+  const changed = !deepEqual(base, present);
+  return {
+    ...state,
+    history: changed ? { past: [...past, base].slice(-HISTORY_LIMIT), present, future: [] } : state.history,
+    gestureBase: null,
+    lastCoalesce: null,
+  };
+}
+
+function targetIndex(to: 'up' | 'down' | 'top' | 'bottom' | number, index: number, count: number): number | null {
+  if (to === 'up') return Math.min(index + 1, count - 1);
+  if (to === 'down') return Math.max(index - 1, 0);
+  if (to === 'top') return count - 1;
+  if (to === 'bottom') return 0;
+  if (!Number.isFinite(to)) return null;
+  return Math.max(0, Math.min(count - 1, Math.round(to)));
+}
+
+function transientUpdate(state: EditorState, id: string, patch: LayerPatch): EditorState {
+  const present = state.history.present;
+  const layer = present.layers.find((l) => l.id === id);
+  if (!layer) return state;
+  const next = mapLayer(present, id, (l) => patchLayer(l, patch));
+  if (deepEqual(next, present)) return state;
+  return {
+    ...state,
+    gestureBase: state.gestureBase ?? present,
+    history: { ...state.history, present: next },
+  };
+}
+
+function step(state: EditorState, action: EditorAction): EditorState {
+  const doc = state.history.present;
+  switch (action.type) {
+    case 'load':
+      return createEditorState(action.doc);
+
+    case 'replaceDoc': {
+      const committed = commit(state, action.doc);
+      const selectedId = action.selectId === undefined ? committed.selectedId : action.selectId;
+      return withValidSelection({ ...committed, selectedId });
+    }
+
+    case 'patchDoc': {
+      const next: DocState = { ...doc };
+      const patch = action.patch as Record<string, unknown>;
+      const target = next as unknown as Record<string, unknown>;
+      for (const key of Object.keys(patch)) if (patch[key] !== undefined) target[key] = patch[key];
+      return commit(state, next, action.coalesce ?? null);
+    }
+
+    case 'addLayers': {
+      if (action.layers.length === 0) return state;
+      const added = action.layers.map((l, i): Layer => ({ ...l, id: `l${doc.nextId + i}` }));
+      const next: DocState = { ...doc, layers: [...doc.layers, ...added], nextId: doc.nextId + added.length };
+      const committed = commit(state, next);
+      const last = added[added.length - 1];
+      return action.select && last ? { ...committed, selectedId: last.id } : committed;
+    }
+
+    case 'updateLayer': {
+      if (action.transient) return transientUpdate(state, action.id, action.patch);
+      if (!hasLayer(doc, action.id)) return state;
+      const next = mapLayer(doc, action.id, (l) => patchLayer(l, action.patch));
+      return commit(state, next, action.coalesce ?? null);
+    }
+
+    case 'commitGesture':
+      return finishGesture(state);
+
+    case 'cancelGesture':
+      if (!state.gestureBase) return state;
+      return { ...state, history: { ...state.history, present: state.gestureBase }, gestureBase: null };
+
+    case 'duplicateLayer': {
+      const index = doc.layers.findIndex((l) => l.id === action.id);
+      const original = doc.layers[index];
+      if (!original) return state;
+      const offset = Number.isFinite(action.offset) ? action.offset : 0;
+      const copy: Layer = { ...original, id: `l${doc.nextId}`, x: original.x + offset, y: original.y + offset };
+      const layers = [...doc.layers.slice(0, index + 1), copy, ...doc.layers.slice(index + 1)];
+      const committed = commit(state, { ...doc, layers, nextId: doc.nextId + 1 });
+      return { ...committed, selectedId: copy.id };
+    }
+
+    case 'removeLayer': {
+      if (!hasLayer(doc, action.id)) return state;
+      const next: DocState = { ...doc, layers: doc.layers.filter((l) => l.id !== action.id) };
+      return withValidSelection(commit(state, next));
+    }
+
+    case 'reorderLayer': {
+      const index = doc.layers.findIndex((l) => l.id === action.id);
+      const layer = doc.layers[index];
+      if (!layer) return state;
+      const to = targetIndex(action.to, index, doc.layers.length);
+      if (to === null || to === index) return state;
+      const layers = doc.layers.filter((l) => l.id !== action.id);
+      layers.splice(to, 0, layer);
+      return commit(state, { ...doc, layers });
+    }
+
+    case 'select': {
+      const id = hasLayer(doc, action.id) ? action.id : null;
+      if (id === state.selectedId) return state;
+      return { ...state, selectedId: id, lastCoalesce: null };
+    }
+
+    case 'undo': {
+      const { past, present, future } = state.history;
+      const previous = past[past.length - 1];
+      if (!previous) return state;
+      return withValidSelection({
+        ...state,
+        history: { past: past.slice(0, -1), present: previous, future: [present, ...future] },
+        lastCoalesce: null,
+      });
+    }
+
+    case 'redo': {
+      const { past, present, future } = state.history;
+      const following = future[0];
+      if (!following) return state;
+      return withValidSelection({
+        ...state,
+        history: { past: [...past, present].slice(-HISTORY_LIMIT), present: following, future: future.slice(1) },
+        lastCoalesce: null,
+      });
+    }
+  }
+}
+
+export function editorReducer(state: EditorState, action: EditorAction): EditorState {
+  const keepsGesture =
+    action.type === 'commitGesture' ||
+    action.type === 'cancelGesture' ||
+    action.type === 'select' ||
+    (action.type === 'updateLayer' && action.transient === true);
+  return step(keepsGesture ? state : finishGesture(state), action);
 }
