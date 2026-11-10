@@ -250,21 +250,29 @@ describe('background object (scenery)', () => {
     expect(sceneryCandidates(['puzzle', 'pen'])[0]).toBe('book');
     expect(sceneryCandidates(['book', 'lamp'])).not.toContain('book');
     expect(sceneryCandidates(['book', 'lamp'])).not.toContain('lamp');
-    expect(sceneryCandidates([])).toHaveLength(10);
+    expect(sceneryCandidates(['wallet', 'lamp', 'folder'])).toEqual([]);
+    expect(sceneryCandidates([])).toEqual([]);
   });
 
-  it('sits behind the scene in a frame corner, cropped by the frame', () => {
+  it('keeps a readable crop and a gap from the foreground', () => {
+    const meta = metaOf('lamp', 'l', 'background');
     for (const preset of PRESET_IDS) {
-      const inp = input(preset, 'composed', ['wallet', 'coin'], true);
-      const result = compose(inp);
-      const [bg] = sceneryOf(result.layers);
-      expect(bg).toBeDefined();
-      expect(result.layers[0]).toBe(bg);
-      const { vx, vy } = visibleAxes(boxOf(inp, bg!), inp.artboard);
-      expect(vx).toBeLessThan(1);
-      expect(vy).toBeLessThan(1);
-      expect(Math.min(vx, vy)).toBeGreaterThanOrEqual(0.3 - 1e-9);
+      const board = ARTBOARD_PRESETS[preset];
+      const foreground = { x: board.width / 3, y: board.height / 3, width: board.width / 3, height: board.height / 3 };
+      const bg = placeScenery(meta, 0.2, [foreground], board, null);
+      expect(bg).not.toBeNull();
+      const box = layerBounds(bg!, meta);
+      const { vx, vy } = visibleAxes(box, board);
+      expect(vx * vy).toBeGreaterThanOrEqual(0.4);
+      expect(vx * vy).toBeLessThan(1);
+      const gap = 0.018 * Math.min(board.width, board.height);
+      expect(boxesIntersect({ x: box.x - gap, y: box.y - gap, width: box.width + 2 * gap, height: box.height + 2 * gap }, foreground)).toBe(false);
     }
+  });
+
+  it('skips the lamp on the travel cover when its contour cannot clear the phone', () => {
+    const inp = input('og', 'composed', ['coin', 'wallet', 'phone'], true);
+    expect(sceneryOf(compose(inp).layers)).toEqual([]);
   });
 
   it('is left out rather than drawn over the headline', () => {
@@ -294,7 +302,7 @@ describe('background object (scenery)', () => {
       const box = boxOf(inp, bg);
       const { vx, vy } = visibleAxes(box, inp.artboard);
       expect(vx * box.width * vy * box.height).toBeLessThanOrEqual(0.32 * 1080 * 1080 + 1e-6);
-      for (const o of objects) expect(boxesIntersect(box, o) ? 1 : 0).toBeLessThanOrEqual(1);
+      for (const o of objects) expect(boxesIntersect(box, o)).toBe(false);
     }
   });
 
@@ -302,8 +310,8 @@ describe('background object (scenery)', () => {
     const inp: ComposeInput = {
       ...input('square', 'composed', ['wallet', 'coin']),
       backgrounds: [
-        { motif: 'lamp', meta: metaOf('lamp', 'l', 'background') },
-        { motif: 'bouquet', meta: metaOf('bouquet', 'l', 'background') },
+        { motif: 'pen', meta: metaOf('pen', 'l', 'background') },
+        { motif: 'coin', meta: metaOf('coin', 'l', 'background') },
       ],
     };
     expect(sceneryOf(compose(inp, { sceneryLimit: 1 }).layers)).toHaveLength(1);
@@ -312,10 +320,10 @@ describe('background object (scenery)', () => {
 
   it('two background objects take different corners', () => {
     const inp: ComposeInput = {
-      ...input('square', 'composed', ['wallet', 'coin']),
+      ...input('square', 'composed', ['headphones', 'phone']),
       backgrounds: [
-        { motif: 'lamp', meta: metaOf('lamp', 'l', 'background') },
-        { motif: 'bouquet', meta: metaOf('bouquet', 'l', 'background') },
+        { motif: 'pen', meta: metaOf('pen', 'l', 'background') },
+        { motif: 'coin', meta: metaOf('coin', 'l', 'background') },
       ],
     };
     const [a, b] = sceneryOf(compose(inp).layers);

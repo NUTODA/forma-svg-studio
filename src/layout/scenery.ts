@@ -1,17 +1,14 @@
 import type { AssetFileMeta, Box, MotifId, PlacedLayer, Size } from '../domain/types';
-import { boxesIntersect, unionBox } from './geometry';
+import { boxesIntersect, visibleAxes } from './geometry';
 
 type Pose = Pick<PlacedLayer, 'x' | 'y' | 'rotation' | 'size'>;
 
-/**
- * Share of the background object, per axis, that stays inside the frame (the rest is cropped). The first
- * value is the reference look; smaller ones tuck it further into the corner when it would reach the headline.
- */
-const SCENERY_VISIBLE = [0.62, 0.5, 0.4, 0.3] as const;
+/** Keep most of the silhouette. Try cropping one edge before cropping two. */
+const SCENERY_CROPS = [[1, 0.72], [0.72, 1], [0.78, 0.78], [0.68, 0.68], [0.64, 0.64]] as const;
 /** The visible part of the background object may take at most this share of the frame: it sets the scene, it does not lead it. */
 const MAX_FRAME_SHARE = 0.32;
-/** At most this share of the objects' area may lie over the background object (it belongs behind, not under them). */
-const MAX_UNDER_OBJECTS = 0.2;
+/** A small gap keeps the background outline from appearing attached to a foreground object. */
+const CLEARANCE = 0.018;
 
 /**
  * Which other object of the library makes a good background for a hero (reference sheets: headphones in
@@ -19,7 +16,7 @@ const MAX_UNDER_OBJECTS = 0.2;
  */
 const SCENERY_FOR: Record<MotifId, readonly MotifId[]> = {
   headphones: ['bouquet', 'lamp', 'book'],
-  wallet: ['lamp', 'folder', 'bouquet'],
+  wallet: ['lamp', 'folder'],
   coin: ['lamp', 'folder', 'book'],
   puzzle: ['book', 'lamp', 'folder'],
   pen: ['book', 'folder', 'lamp'],
@@ -29,26 +26,15 @@ const SCENERY_FOR: Record<MotifId, readonly MotifId[]> = {
   bouquet: ['book', 'lamp', 'folder'],
   folder: ['lamp', 'book', 'bouquet'],
 };
-const SCENERY_FALLBACK: readonly MotifId[] = ['lamp', 'bouquet', 'book', 'folder', 'phone', 'headphones', 'puzzle', 'pen', 'wallet', 'coin'];
-
 /** Background motifs for a composition: objects not already in it, best suited to the hero first. */
 export function sceneryCandidates(motifs: readonly MotifId[]): MotifId[] {
   const used = new Set(motifs);
   const hero = motifs[0];
-  const preferred = hero === undefined ? [] : SCENERY_FOR[hero];
-  const out: MotifId[] = [];
-  for (const id of [...preferred, ...SCENERY_FALLBACK]) if (!used.has(id) && !out.includes(id)) out.push(id);
-  return out;
+  return hero === undefined ? [] : SCENERY_FOR[hero].filter((id) => !used.has(id));
 }
 
 type Corner = 'tl' | 'tr' | 'bl' | 'br';
-const CORNERS: readonly Corner[] = ['tl', 'tr', 'bl', 'br'];
-
-function overlapArea(a: Box, b: Box): number {
-  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
-  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
-  return w > 0 && h > 0 ? w * h : 0;
-}
+const CORNERS: readonly Corner[] = ['bl', 'br', 'tl', 'tr'];
 
 /**
  * Pose of a background object: same common scale as the scene (`scale` = rendered size per source unit, so
@@ -67,28 +53,22 @@ export function placeScenery(
 ): (Pose & { corner: string }) | null {
   const size = scale * meta.bounds.height;
   const width = scale * meta.bounds.width;
-  const group = objects.length > 0 ? unionBox(objects) : null;
-  const objectsArea = objects.reduce((sum, b) => sum + b.width * b.height, 0);
+  const gap = CLEARANCE * Math.min(artboard.width, artboard.height);
   const frameArea = artboard.width * artboard.height;
-  for (const visible of SCENERY_VISIBLE) {
-    const hidden = 1 - visible;
-    let best: { pose: Pose; corner: Corner; cost: number } | null = null;
+  for (const [keepX, keepY] of SCENERY_CROPS) {
     for (const corner of CORNERS) {
       if (taken.has(corner)) continue;
-      const x = corner.endsWith('l') ? -hidden * width : artboard.width - visible * width;
-      const y = corner.startsWith('t') ? -hidden * size : artboard.height - visible * size;
+      const x = corner.endsWith('l') ? (keepX - 1) * width : artboard.width - keepX * width;
+      const y = corner.startsWith('t') ? (keepY - 1) * size : artboard.height - keepY * size;
       const box: Box = { x, y, width, height: size };
+      const { vx, vy } = visibleAxes(box, artboard);
+      if (vx < keepX - 1e-9 || vy < keepY - 1e-9) continue;
       if (avoid && boxesIntersect(box, avoid)) continue;
-      const shown = Math.min(width * visible, artboard.width) * Math.min(size * visible, artboard.height);
-      if (shown > MAX_FRAME_SHARE * frameArea) continue;
-      const covered = objects.reduce((sum, b) => sum + overlapArea(box, b), 0);
-      if (objectsArea > 0 && covered > MAX_UNDER_OBJECTS * objectsArea) continue;
-      // Least covered by the scene; ties keep the corner order (top-left first, as in the references).
-      const far = group ? -Math.hypot(x + width / 2 - (group.x + group.width / 2), y + size / 2 - (group.y + group.height / 2)) : 0;
-      const cost = covered / Math.max(width * size, 1e-9) + 1e-6 * far;
-      if (!best || cost < best.cost - 1e-9) best = { pose: { x: x + width / 2, y: y + size / 2, rotation: 0, size }, corner, cost };
+      if (vx * vy * width * size > MAX_FRAME_SHARE * frameArea) continue;
+      const clearance = { x: x - gap, y: y - gap, width: width + 2 * gap, height: size + 2 * gap };
+      if (objects.some((object) => boxesIntersect(clearance, object))) continue;
+      return { x: x + width / 2, y: y + size / 2, rotation: 0, size, corner };
     }
-    if (best) return { ...best.pose, corner: best.corner };
   }
   // No corner keeps it modest, clear of the objects and of the headline: better none than one that dominates.
   return null;
