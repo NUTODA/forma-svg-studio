@@ -3,7 +3,6 @@ import { createContext, useContext } from 'react';
 import type {
   ArtboardPresetId,
   AssetFileMeta,
-  BriefMode,
   ColorMode,
   ColorResolver,
   Detail,
@@ -71,10 +70,11 @@ export interface EditorApi {
   savedAt: number | null;
 
   /* ---- brief ---- */
-  /** Switches the brief tab; `text` replaces the brief text in the same atomic update (one undo step). */
-  setBriefMode(mode: BriefMode, text?: string): void;
   setBriefText(text: string): void;
-  /** Analyse the current brief text and compose. Returns false when nothing could be composed. */
+  /**
+   * Read the current brief text and compose. One input serves both kinds of brief: an explicit list of objects
+   * is built as written, anything else is interpreted as a title. Returns false when nothing could be composed.
+   */
   runBrief(): boolean;
   /** True while the optional LLM is interpreting the title (rule-based result is the fallback). */
   briefBusy: boolean;

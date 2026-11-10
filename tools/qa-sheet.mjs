@@ -67,7 +67,7 @@ await page.waitForSelector('[role=application]');
 
 const results = [];
 for (const [mode, text, format, layout, detail = 'L'] of scenarios) {
-  await page.getByRole('tab', { name: mode === 'title' ? 'По заголовку' : 'По названиям' }).click();
+  // One input for both kinds of brief: `mode` is what the scene was written as, the app reads the text itself.
   await page.locator('textarea').fill(text);
   await page.locator(`[role=radio][aria-label^="${format}"]`).click();
   await page.locator(`[role=radio][aria-label^="${detail},"]`).click();
@@ -77,6 +77,9 @@ for (const [mode, text, format, layout, detail = 'L'] of scenarios) {
   await page.waitForFunction(() => !document.querySelector('.brief__run')?.getAttribute('aria-busy'), null, { timeout: 30000 });
   await page.waitForTimeout(700);
   const summary = ((await page.locator('.brief').innerText()).match(/(Подобрано[^\n]*|Распознано[^\n]*|Явных совпадений[^\n]*)/) ?? [''])[0];
+  // «Распознано …» is the summary of a list; a title says «Подобрано …» or «Явных совпадений нет …».
+  const read = summary.startsWith('Распознано') ? 'names' : 'title';
+  if (read !== mode) process.stdout.write(`\n  note: «${text}» was written as ${mode} but the app read it as ${read}\n`);
   const doc = await page.evaluate(() => {
     const raw = localStorage.getItem('forma:draft:v1');
     const parsed = raw ? JSON.parse(raw) : null;

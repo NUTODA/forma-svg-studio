@@ -5,7 +5,7 @@ import { findNameSpans, fuzzyCandidate, suggestMotif } from './vocabulary';
 
 const MAX_COUNT = 4;
 /** Hard cap on objects in one composition built from a names list. */
-const MAX_TOTAL = 8;
+export const MAX_LIST_OBJECTS = 8;
 
 const SEPARATORS = /\s*(?:[,;+&/\\|\n\r.!?•·]+|\s[—–-]\s|\s(?:и|или|плюс)\s)\s*/giu;
 
@@ -124,6 +124,9 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
   if (spans.length > 0) {
     const seen = new Set<MotifId>();
     const distinct = spans.filter((s) => (seen.has(s.motif) ? false : (seen.add(s.motif), true)));
+    // Bare: every word of the fragment belongs to a name (numbers apart), so «лампа для телефона» is not.
+    const named = new Set(spans.flatMap((s) => tokens.slice(s.from, s.to + 1).map((t) => t.index)));
+    const bare = content.every((t) => named.has(t.index));
     return distinct.map((span) => {
       const { raw, offset } = distinct.length === 1 ? { raw: text, offset: 0 } : tokenSpan(text, tokens, span.from, span.to);
       return {
@@ -135,17 +138,22 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
           status: available.has(span.motif) ? 'matched' : 'unavailable',
           motif: span.motif,
           via: span.via,
+          bare,
         },
       };
     });
   }
 
   const typos = new Map<MotifId, Token>();
+  const misspelt = new Set<number>();
   for (const token of content) {
     const fuzzy = fuzzyCandidate(token);
-    if (fuzzy !== null && !typos.has(fuzzy.candidate.motif)) typos.set(fuzzy.candidate.motif, token);
+    if (fuzzy === null) continue;
+    misspelt.add(token.index);
+    if (!typos.has(fuzzy.candidate.motif)) typos.set(fuzzy.candidate.motif, token);
   }
   if (typos.size > 0) {
+    const bare = content.every((t) => misspelt.has(t.index));
     return [...typos].map(([motif, token]) => {
       const { raw, offset } = typos.size === 1 ? { raw: text, offset: 0 } : { raw: token.raw, offset: token.start };
       return {
@@ -157,6 +165,7 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
           motif,
           via: 'fuzzy',
           suggestion: motif,
+          bare,
         },
       };
     });
@@ -177,13 +186,14 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
             motif: guess.motif,
             via: 'fuzzy',
             suggestion: guess.motif,
+            bare: content.length === 1,
           },
         },
       ];
     }
-    return [{ token: text, offset: 0, entry: { raw: text, status: 'unmatched', suggestion: guess.motif } }];
+    return [{ token: text, offset: 0, entry: { raw: text, status: 'unmatched', suggestion: guess.motif, bare: false } }];
   }
-  return [{ token: text, offset: 0, entry: { raw: text, status: 'unmatched' } }];
+  return [{ token: text, offset: 0, entry: { raw: text, status: 'unmatched', bare: false } }];
 }
 
 function availableList(available: ReadonlySet<MotifId>): string {
@@ -260,12 +270,12 @@ export function parseNames(input: string, available: ReadonlySet<MotifId>): Name
   for (const [motif, count] of totals) {
     if (available.has(motif)) for (let i = 0; i < count; i++) motifs.push(motif);
   }
-  if (motifs.length > MAX_TOTAL) {
-    motifs = motifs.slice(0, MAX_TOTAL);
+  if (motifs.length > MAX_LIST_OBJECTS) {
+    motifs = motifs.slice(0, MAX_LIST_OBJECTS);
     issues.push({
       level: 'warning',
       code: 'too-many',
-      message: `Объектов слишком много: в композицию попали первые ${MAX_TOTAL}.`,
+      message: `Объектов слишком много: в композицию попали первые ${MAX_LIST_OBJECTS}.`,
     });
   }
 

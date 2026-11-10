@@ -433,6 +433,18 @@ describe('parseNames', () => {
     ]);
     expect(result.issues.some((i) => i.action?.replacement === 'Ручка')).toBe(true);
   });
+
+  it('marks whether a fragment held nothing but a name', () => {
+    const bare = (input: string) => parseNames(input, ALL).entries.map((e) => e.bare);
+    expect(bare('книга, 2 монеты, настольная лампа')).toEqual([true, true, true]);
+    expect(bare('ламба, телефан')).toEqual([true, true]);
+    // A number that is part of a model name is not a word around the name.
+    expect(bare('iPhone 15')).toEqual([true]);
+    // Words around a name, a negation included, are the reason a fragment is prose.
+    expect(bare('Книга для чтения')).toEqual([false]);
+    expect(bare('лампа без телефона')).toEqual([false, false]);
+    expect(bare('зонт')).toEqual([false]);
+  });
 });
 
 describe('analyzeTitle regressions', () => {

@@ -10,7 +10,7 @@ import {
   recomposeDoc,
   withBackgroundObjects,
 } from '../../doc/doc';
-import { applyLlmPick, llmAvailable, needsLlm, requestLlmPick, type LlmPick } from '../../semantics/llm';
+import { llmAvailable, requestLlmPick, type LlmPick } from '../../semantics/llm';
 import { canRedo, canUndo, createEditorState, editorReducer, type EditorState } from '../../doc/editor';
 import {
   backupDraft,
@@ -55,15 +55,17 @@ import { commandForKey, isInsideOpenDialog, isTextEntryTarget, needsSelection, t
 import { exportFileName } from '../util/slug';
 import { normalizeAngle, replaceToken } from '../util/text';
 import {
-  analyseBrief,
+  analyseInput,
   buildDemo,
-  composedMessage,
+  composedStatus,
   detailFallbackMessage,
   emptyBriefMessage,
   firstProblemMessage,
   layerName,
   motifName,
   motifsWithoutDetail,
+  planBrief,
+  withLlmPick,
 } from './briefing';
 import type { BriefResult, EditorApi, PaletteChange, ReorderTarget, StatusLevel, StatusMessage } from './editorContext';
 import { useTemplates } from './useTemplates';
@@ -271,8 +273,9 @@ function pickPalette(list: readonly Palette[], id: string): Palette {
 }
 
 /**
- * Title mode makes the text the headline; a names list is not a headline, so a new scene starts without one.
- * A restored brief may be longer than a headline may be, and a headline over the limit makes the draft unreadable.
+ * A title becomes the headline; a names list is not a headline, so a new scene starts without one.
+ * `mode` is how the text was read, not a choice the user makes. A restored brief may be longer than a
+ * headline may be, and a headline over the limit makes the draft unreadable.
  */
 export function headlineForBrief(mode: BriefMode, text: string): string {
   if (mode !== 'title') return '';
@@ -451,13 +454,7 @@ export function useEditor(): EditorApi {
   );
 
   /* ---- brief ---- */
-  const setBriefMode = useCallback((mode: BriefMode, text?: string) => {
-    const current = latest.current.state.history.present.brief;
-    // One patch for mode + text: a tab switch is a single undo step that never coalesces with typing.
-    dispatch({ type: 'patchDoc', patch: { brief: { mode, text: text ?? current.text } } });
-    setBrief(null);
-  }, []);
-
+  // The mode stored with the text is how the last run read it (list or title); typing does not change it.
   const setBriefText = useCallback((text: string) => {
     const mode = latest.current.state.history.present.brief.mode;
     dispatch({ type: 'patchDoc', patch: { brief: { mode, text } }, coalesce: 'brief-text' });
@@ -465,20 +462,16 @@ export function useEditor(): EditorApi {
   }, []);
 
   const composeBrief = useCallback(
-    (text: string, mode: BriefMode, pick?: LlmPick | null): boolean => {
+    (text: string, pick?: LlmPick | null): boolean => {
       const base = currentDoc();
-      let { motifs, result } = analyseBrief(text, mode, available);
-      if (pick && result.mode === 'title') {
-        const analysis = applyLlmPick(result.analysis, pick);
-        result = { mode: 'title', analysis };
-        motifs = analysis.selected;
-      }
+      const { motifs, result, scenery } = withLlmPick(analyseInput(text, available), pick);
+      const { mode } = result;
       setBrief(result);
       if (motifs.length === 0) {
         if (base.brief.text !== text || base.brief.mode !== mode) {
           dispatch({ type: 'patchDoc', patch: { brief: { mode, text } }, coalesce: 'brief-text' });
         }
-        announce(firstProblemMessage(result) ?? emptyBriefMessage(mode, text), 'error');
+        announce(firstProblemMessage(result) ?? emptyBriefMessage(text), 'error');
         return false;
       }
       // «Собрать» always produces the reference look: palette plane plus a background object.
@@ -486,14 +479,14 @@ export function useEditor(): EditorApi {
       const look = { showPlane: true, backgroundObjects: true };
       // The model may also choose the background object; otherwise the layout's own table decides.
       const { scenery: _previous, ...rest } = base;
-      const scenery = pick && result.mode === 'title' ? pick.scenery : undefined;
       const next = docFromMotifs(
         { ...rest, ...look, ...(scenery ? { scenery } : {}), brief: { mode, text }, headline: headlineForBrief(mode, text) },
         motifs,
         files,
       );
       replaceDoc(next, null);
-      announce(composedMessage(motifs, next.layout), 'success');
+      const done = composedStatus(result, motifs, next.layout);
+      announce(done.text, done.level);
       return true;
     },
     [announce, currentDoc, replaceDoc],
@@ -512,18 +505,18 @@ export function useEditor(): EditorApi {
   }, []);
 
   const runBrief = useCallback((): boolean => {
-    const { text, mode } = currentDoc().brief;
+    const { text } = currentDoc().brief;
     const token = ++runToken.current;
-    const rules = mode === 'title' && llmOn ? analyseBrief(text, mode, available).result : null;
-    if (rules === null || rules.mode !== 'title' || !needsLlm(rules.analysis)) {
+    // A list never waits for the model: it composes at once, with the model on or off.
+    if (!planBrief(text, available, llmOn).askLlm) {
       setBriefBusy(false);
-      return composeBrief(text, mode);
+      return composeBrief(text);
     }
     setBriefBusy(true);
     void requestLlmPick(text, available).then((pick) => {
       if (token !== runToken.current) return; // a newer run or a reset superseded this one
       setBriefBusy(false);
-      composeBrief(text, mode, pick);
+      composeBrief(text, pick);
     });
     return true;
   }, [composeBrief, currentDoc, llmOn]);
@@ -549,11 +542,11 @@ export function useEditor(): EditorApi {
 
   const applyIssueAction = useCallback(
     (action: IssueAction) => {
-      const { text, mode } = currentDoc().brief;
+      const { text } = currentDoc().brief;
       switch (action.kind) {
         case 'replace': {
           if (action.token === undefined || action.replacement === undefined) return;
-          composeBrief(replaceToken(text, action.token, action.replacement, action.range), mode);
+          composeBrief(replaceToken(text, action.token, action.replacement, action.range));
           return;
         }
         case 'add': {
@@ -574,7 +567,7 @@ export function useEditor(): EditorApi {
           return;
         }
         case 'example': {
-          composeBrief(action.replacement ?? action.token ?? '', mode);
+          composeBrief(action.replacement ?? action.token ?? '');
           return;
         }
       }
@@ -927,7 +920,6 @@ export function useEditor(): EditorApi {
       brief,
       status,
       savedAt,
-      setBriefMode,
       setBriefText,
       runBrief,
       briefBusy,
@@ -977,7 +969,6 @@ export function useEditor(): EditorApi {
       brief,
       status,
       savedAt,
-      setBriefMode,
       setBriefText,
       runBrief,
       briefBusy,

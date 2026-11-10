@@ -34,6 +34,11 @@ export function motifsCountLabel(n: number): string {
   return `${n}${NBSP}${pluralRu(n, ['мотив', 'мотива', 'мотивов'])}`;
 }
 
+/** Objects in a composition: «1 объект», «5 объектов». */
+export function objectsCountLabel(n: number): string {
+  return `${n}${NBSP}${pluralRu(n, ['объект', 'объекта', 'объектов'])}`;
+}
+
 export function catalogNote(available: number, total: number): string | null {
   if (available >= total) return null;
   return `Доступно ${available}${NBSP}из${NBSP}${total}${NBSP}мотивов — остальные появятся, когда их файлы будут добавлены`;
@@ -102,10 +107,15 @@ export function hasErrorIssue(brief: BriefResult | null): boolean {
   return brief ? briefIssues(brief).some((i) => i.level === 'error') : false;
 }
 
-export function namesSummary(entries: readonly NameEntry[]): string {
+/**
+ * «Распознано 4 из 4 · в композиции 5 объектов»: names recognised, and (once the quantities are counted)
+ * how many objects they make. The two differ for «2 монеты», for a name left out and for the object limit.
+ */
+export function namesSummary(entries: readonly NameEntry[], composed?: number): string {
   if (entries.length === 0) return 'Названия не указаны';
   const ok = entries.filter((e) => e.status === 'matched' || e.status === 'weak').length;
-  return `Распознано ${ok}${NBSP}из${NBSP}${entries.length}`;
+  const head = `Распознано ${ok}${NBSP}из${NBSP}${entries.length}`;
+  return composed === undefined ? head : `${head} · в композиции ${objectsCountLabel(composed)}`;
 }
 
 /** Text for the polite live region: the summary plus the messages that need attention. */
@@ -114,30 +124,12 @@ export function briefAnnouncement(brief: BriefResult | null): string {
   const attention = briefIssues(brief)
     .filter((i) => i.level !== 'info')
     .map((i) => i.message);
-  const summary = brief.mode === 'title' ? brief.analysis.summary : namesSummary(brief.parse.entries);
+  const summary =
+    brief.mode === 'title' ? brief.analysis.summary : namesSummary(brief.parse.entries, brief.parse.motifs.length);
   return [summary, ...attention].filter(Boolean).join('. ');
 }
 
 /* ---------------- Brief panel ---------------- */
-
-/** Roving-tabindex arrow handling for the tablist; `null` when the key is not a navigation key. */
-export function nextTabIndex(key: string, current: number, count: number): number | null {
-  if (count <= 0) return null;
-  switch (key) {
-    case 'ArrowRight':
-    case 'ArrowDown':
-      return (current + 1) % count;
-    case 'ArrowLeft':
-    case 'ArrowUp':
-      return (current - 1 + count) % count;
-    case 'Home':
-      return 0;
-    case 'End':
-      return count - 1;
-    default:
-      return null;
-  }
-}
 
 export function isMacPlatform(platform: string | undefined): boolean {
   return platform ? /mac|iphone|ipad|ipod/i.test(platform) : false;

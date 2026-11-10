@@ -63,7 +63,6 @@ function makeApi(overrides: Partial<EditorApi> = {}, doc: DocState = createDoc()
     brief: null,
     status: null,
     savedAt: null,
-    setBriefMode: noop,
     setBriefText: noop,
     runBrief: () => true,
     applyIssueAction: noop,

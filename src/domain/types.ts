@@ -208,6 +208,11 @@ export interface NameEntry {
   suggestion?: MotifId;
   /** Requested quantity (1..4), from «3 монеты» or «монета ×2». */
   count: number;
+  /**
+   * The fragment held nothing but a name (and a quantity): true for «монеты» in «2 монеты», false for
+   * «Книга для чтения» or «лампа без телефона», where words around the name decide what is meant.
+   */
+  bare?: boolean;
 }
 
 export interface NamesParse {

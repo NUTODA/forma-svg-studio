@@ -13,7 +13,10 @@ import type {
 } from '../../domain/types';
 import { MOTIFS } from '../../domain/motifs';
 import { analyzeTitle } from '../../semantics/analyzeTitle';
-import { parseNames } from '../../semantics/parseNames';
+import { readBrief } from '../../semantics/briefMode';
+import { applyLlmPick, needsLlm, type LlmPick } from '../../semantics/llm';
+import { MAX_LIST_OBJECTS, parseNames } from '../../semantics/parseNames';
+import { objectsCountLabel } from '../briefFormat';
 import { formatCountedList } from '../util/text';
 import type { BriefResult } from './editorContext';
 
@@ -39,7 +42,7 @@ export interface BriefAnalysis {
   result: BriefResult;
 }
 
-/** Run the semantic analysis matching the brief mode. */
+/** Run the semantic analysis of a known kind of brief (demos state theirs; typed text goes through `analyseInput`). */
 export function analyseBrief(text: string, mode: BriefMode, available: ReadonlySet<MotifId>): BriefAnalysis {
   if (mode === 'title') {
     const analysis = analyzeTitle(text, available, { max: TITLE_MOTIF_LIMIT });
@@ -47,6 +50,50 @@ export function analyseBrief(text: string, mode: BriefMode, available: ReadonlyS
   }
   const parse = parseNames(text, available);
   return { motifs: parse.motifs, result: { mode: 'names', parse } };
+}
+
+/**
+ * Analyse text typed into the one input: an explicit list of objects is built as written (every object,
+ * quantities included), anything else is interpreted as a title.
+ */
+export function analyseInput(text: string, available: ReadonlySet<MotifId>): BriefAnalysis {
+  const { mode, parse } = readBrief(text, available);
+  return mode === 'names'
+    ? { motifs: parse.motifs, result: { mode, parse } }
+    : analyseBrief(text, mode, available);
+}
+
+/** What a run does: the rule-based reading, and whether the model is worth asking about it. */
+export interface BriefPlan {
+  analysis: BriefAnalysis;
+  askLlm: boolean;
+}
+
+/**
+ * The model reads titles and metaphors only. A list names its objects itself: it never leaves the
+ * browser and is never cut down to what a model picks, so it composes the same with a model and without.
+ */
+export function planBrief(text: string, available: ReadonlySet<MotifId>, llmOn: boolean): BriefPlan {
+  const analysis = analyseInput(text, available);
+  const { result } = analysis;
+  return { analysis, askLlm: llmOn && result.mode === 'title' && needsLlm(result.analysis) };
+}
+
+export interface ComposedBrief extends BriefAnalysis {
+  /** Background object the model chose for the title's meaning. */
+  scenery?: MotifId;
+}
+
+/** Merges the model's answer into a title reading; a list and a missing answer stay as the rules read them. */
+export function withLlmPick(analysis: BriefAnalysis, pick: LlmPick | null | undefined): ComposedBrief {
+  const { result } = analysis;
+  if (!pick || result.mode !== 'title') return analysis;
+  const merged = applyLlmPick(result.analysis, pick);
+  return {
+    motifs: merged.selected,
+    result: { mode: 'title', analysis: merged },
+    ...(pick.scenery ? { scenery: pick.scenery } : {}),
+  };
 }
 
 export function briefIssues(result: BriefResult): InputIssue[] {
@@ -61,16 +108,38 @@ export function firstProblemMessage(result: BriefResult): string | null {
   return issue?.message ?? null;
 }
 
-export function emptyBriefMessage(mode: BriefMode, text: string): string {
-  if (!text.trim()) {
-    return mode === 'title' ? 'Введите заголовок — по нему подберутся объекты' : 'Введите названия объектов через запятую';
-  }
-  return 'Не удалось подобрать объекты — уточните задание';
+export function emptyBriefMessage(text: string): string {
+  return text.trim()
+    ? 'Не удалось подобрать объекты — уточните задание'
+    : 'Введите заголовок или список объектов через запятую';
 }
 
 export function composedMessage(motifs: readonly MotifId[], layout: LayoutMode): string {
   const names = formatCountedList(motifs.map(motifName));
-  return `Собрано: ${names} — компоновка «${LAYOUT_LABELS[layout]}»`;
+  return `Собрано ${objectsCountLabel(motifs.length)}: ${names} — компоновка «${LAYOUT_LABELS[layout]}»`;
+}
+
+/** Names from a list that did not make it into the composition: unknown to the library, or without files. */
+export function skippedFromList(result: BriefResult): string[] {
+  if (result.mode !== 'names') return [];
+  return result.parse.entries
+    .filter((entry) => entry.status === 'unmatched' || entry.status === 'unavailable')
+    .map((entry) => `«${entry.raw}»`);
+}
+
+/** The status line after a run: how many objects were composed and, for a list, what was left out and why. */
+export function composedStatus(
+  result: BriefResult,
+  motifs: readonly MotifId[],
+  layout: LayoutMode,
+): { text: string; level: 'success' | 'warning' } {
+  const skipped = skippedFromList(result);
+  const capped = result.mode === 'names' && result.parse.issues.some((issue) => issue.code === 'too-many');
+  const notes: string[] = [];
+  if (skipped.length > 0) notes.push(`Не вошло: ${skipped.join(', ')}`);
+  if (capped) notes.push(`Лишнее не поместилось: в композиции не больше ${MAX_LIST_OBJECTS} объектов`);
+  const text = composedMessage(motifs, layout);
+  return notes.length === 0 ? { text, level: 'success' } : { text: `${text}. ${notes.join('. ')}`, level: 'warning' };
 }
 
 /** Motifs of the document that have no exact file for `detail` (they are drawn with the nearest variant). */

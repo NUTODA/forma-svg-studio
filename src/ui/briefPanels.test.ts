@@ -219,8 +219,9 @@ describe('AnalysisView', () => {
   it('shows a muted explainer before the first run', () => {
     const html = render(fakeApi(), () => createElement(AnalysisView, { id: 'fb' }));
     expect(html).toContain('id="fb"');
-    expect(html).toContain('По заголовку');
-    expect(html).toContain('По названиям');
+    expect(html).toContain('Заголовок или тема');
+    expect(html).toContain('Список объектов');
+    expect(html).not.toContain('Прочитано как');
     expect(html).not.toContain('analysis__match');
   });
 
@@ -257,6 +258,8 @@ describe('AnalysisView', () => {
       }),
     };
     const html = render(fakeApi({ brief }), AnalysisView);
+    expect(html).toContain('Прочитано как заголовок или тема');
+    expect(html).not.toContain('Прочитано как список');
     expect(html).toContain('Понял: учёба и чтение');
     expect(html).toContain('название «книга» · тема «учёба»');
     expect(html).toContain('сильное совпадение');
@@ -302,6 +305,9 @@ describe('AnalysisView', () => {
     expect(html).toContain('«книга»');
     expect(html).toContain('chip chip--ok');
     expect(html).toContain('×2');
+    // Five names, four objects in the composition: the count says so instead of leaving it to be guessed.
+    expect(html).toContain('Прочитано как список объектов');
+    expect(html).toContain('в композиции 4 объекта');
     expect(html).toContain('похоже на «Наушники»');
     expect(html).toContain('нет в библиотеке');
     expect(html).toContain('не найдено');
@@ -330,27 +336,34 @@ describe('DemoList', () => {
 });
 
 describe('BriefPanel', () => {
-  it('title mode: tabs, label, placeholder, counter and a disabled run button when blank', () => {
+  it('is one input, not tabs: label, placeholder for both kinds of brief, counter, disabled run button when blank', () => {
     const html = render(fakeApi(), BriefPanel);
-    expect(html).toContain('role="tablist"');
-    expect(html).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*tabindex="0"[^>]*>По заголовку/);
-    expect(html).toMatch(/role="tab"[^>]*aria-selected="false"[^>]*tabindex="-1"[^>]*>По названиям/);
-    expect(html).toContain('role="tabpanel"');
-    expect(html).toContain('Заголовок или тема');
-    expect(html).toContain('placeholder="Например: Как накопить на первую поездку"');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain('role="tab"');
+    expect(html).not.toContain('role="tabpanel"');
+    expect(html.match(/<textarea/g)).toHaveLength(1);
+    expect(html).toContain('Заголовок или список объектов');
+    expect(html).toContain('Как накопить на первую поездку');
+    expect(html).toContain('книга, 2 монеты, лампа');
     expect(html).toContain('maxLength="300"');
     expect(html).toContain('rows="3"');
     expect(html).toContain('0 / 300');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Собрать композицию/);
   });
 
-  it('names mode: its own label, placeholder, hint and enabled run button', () => {
-    const html = render(fakeApi({ mode: 'names', text: 'книга, лампа' }), BriefPanel);
-    expect(html).toContain('Названия объектов');
-    expect(html).toContain('Например: книга, 2 монеты, лампа');
-    expect(html).toContain('Через запятую, «и» или с новой строки.');
+  it('explains both readings in the hint and enables the run button once there is text', () => {
+    const html = render(fakeApi({ text: 'книга, лампа' }), BriefPanel);
+    expect(html).toContain('Тему подберём по смыслу');
+    expect(html).toContain('список названий соберём как написан');
     expect(html).toContain('12 / 300');
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Собрать композицию/);
+  });
+
+  it('shows a draft the same way whichever mode it was saved in', () => {
+    const text = 'книга, 2 монеты, лампа, ручка';
+    const saved = (mode: BriefMode) => render(fakeApi({ mode, text }), BriefPanel);
+    expect(saved('names')).toBe(saved('title'));
+    expect(saved('names')).toContain(text);
   });
 
   it('flags the textarea invalid after an error-level result and links its descriptions', () => {

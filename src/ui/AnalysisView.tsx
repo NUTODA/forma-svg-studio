@@ -116,6 +116,11 @@ function MatchRow({ match, selected }: { match: MotifMatch; selected: boolean })
   );
 }
 
+/** How the input was read: the user does not pick a mode, so the result says which one applied. */
+function ReadAs({ kind }: { kind: 'list' | 'title' }): JSX.Element {
+  return <p className="analysis__kind">{kind === 'list' ? 'Прочитано как список объектов' : 'Прочитано как заголовок или тема'}</p>;
+}
+
 function TitleResult({ analysis }: { analysis: TitleAnalysis }): JSX.Element {
   const selected = new Set(analysis.selected);
   const rows = analysis.matches.slice(0, MAX_MATCH_ROWS);
@@ -124,6 +129,7 @@ function TitleResult({ analysis }: { analysis: TitleAnalysis }): JSX.Element {
   const hasChips = analysis.excluded.length + analysis.themes.length + unknown.length > 0;
   return (
     <>
+      <ReadAs kind="title" />
       {analysis.summary && <p className="analysis__summary">{analysis.summary}</p>}
       {rows.length > 0 && (
         <ul className="analysis__matches" role="list">
@@ -178,7 +184,8 @@ function NameRow({ entry }: { entry: NameEntry }): JSX.Element {
 function NamesResult({ parse }: { parse: NamesParse }): JSX.Element {
   return (
     <>
-      <p className="analysis__summary">{namesSummary(parse.entries)}</p>
+      <ReadAs kind="list" />
+      <p className="analysis__summary">{namesSummary(parse.entries, parse.motifs.length)}</p>
       {parse.entries.length > 0 && (
         <ul className="analysis__entries" role="list">
           {parse.entries.map((entry, i) => (
@@ -195,10 +202,10 @@ function Explainer(): JSX.Element {
   return (
     <div className="analysis__explainer">
       <p>
-        <strong>По заголовку</strong> — опишите тему, а мы подберём объекты по смыслу.
+        <strong>Заголовок или тема</strong> — опишите её словами, а мы подберём объекты по смыслу.
       </p>
       <p>
-        <strong>По названиям</strong> — перечислите объекты сами, а мы найдём их в библиотеке.
+        <strong>Список объектов</strong> — перечислите их через запятую, а мы соберём ровно эти объекты, с количеством.
       </p>
     </div>
   );

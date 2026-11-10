@@ -17,7 +17,7 @@ import {
   motifsCountLabel,
   nameStatusChip,
   namesSummary,
-  nextTabIndex,
+  objectsCountLabel,
   pluralRu,
   reasonsLine,
   strengthBars,
@@ -99,6 +99,23 @@ describe('analysis helpers', () => {
     );
   });
 
+  it('adds how many objects the recognised names make, so «2 монеты» is not lost in the count', () => {
+    // Four names, five objects: one of them was asked for twice.
+    const four = [entry('matched'), entry('matched'), entry('matched'), entry('matched')];
+    expect(namesSummary(four, 5)).toBe(`Распознано 4${NBSP}из${NBSP}4 · в композиции 5${NBSP}объектов`);
+    expect(namesSummary([entry('matched'), entry('unmatched')], 1)).toBe(
+      `Распознано 1${NBSP}из${NBSP}2 · в композиции 1${NBSP}объект`,
+    );
+    expect(namesSummary([entry('unmatched')], 0)).toBe(`Распознано 0${NBSP}из${NBSP}1 · в композиции 0${NBSP}объектов`);
+  });
+
+  it('counts objects with the right plural', () => {
+    expect(objectsCountLabel(1)).toBe(`1${NBSP}объект`);
+    expect(objectsCountLabel(3)).toBe(`3${NBSP}объекта`);
+    expect(objectsCountLabel(5)).toBe(`5${NBSP}объектов`);
+    expect(objectsCountLabel(11)).toBe(`11${NBSP}объектов`);
+  });
+
   const title = (issues: TitleAnalysis['issues']): BriefResult => ({
     mode: 'title',
     analysis: {
@@ -130,17 +147,7 @@ describe('analysis helpers', () => {
   });
 });
 
-describe('tab navigation', () => {
-  it('wraps with arrows and jumps with Home/End', () => {
-    expect(nextTabIndex('ArrowRight', 0, 2)).toBe(1);
-    expect(nextTabIndex('ArrowRight', 1, 2)).toBe(0);
-    expect(nextTabIndex('ArrowLeft', 0, 2)).toBe(1);
-    expect(nextTabIndex('Home', 1, 2)).toBe(0);
-    expect(nextTabIndex('End', 0, 2)).toBe(1);
-    expect(nextTabIndex('a', 0, 2)).toBeNull();
-    expect(nextTabIndex('ArrowRight', 0, 0)).toBeNull();
-  });
-
+describe('brief panel helpers', () => {
   it('detects the platform for the shortcut hint', () => {
     expect(isMacPlatform('MacIntel')).toBe(true);
     expect(isMacPlatform('Win32')).toBe(false);
