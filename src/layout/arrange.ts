@@ -44,7 +44,7 @@ export interface Slot {
 }
 
 export interface Arrangement {
-  kind: 'row' | 'tiers' | 'column' | 'surface';
+  kind: 'row' | 'tiers' | 'column' | 'surface' | 'floor';
   tiers: number;
   slots: Slot[];
 }
@@ -203,7 +203,8 @@ export function denseArrangements(dims: readonly Dim[]): Arrangement[] {
  */
 export function onSurface(dims: readonly Dim[], surface: number): Arrangement | null {
   const base = dims[surface];
-  if (!base || dims.length < 2 || dims.length > 3) return null;
+  // The references rest exactly one small object on a flat one (phone on a book, puzzle on a book).
+  if (!base || dims.length !== 2) return null;
   const others = dims.filter((d) => d.index !== surface);
   // Only objects clearly smaller than the surface can lie on it.
   if (others.some((d) => d.aw > 0.75 * base.aw || d.ah > 0.9 * base.ah)) return null;
@@ -215,6 +216,54 @@ export function onSurface(dims: readonly Dim[], surface: number): Arrangement | 
     slots.push({ index: d.index, cx: fx * base.aw, cy: fy * base.ah });
   });
   return { kind: 'surface', tiers: 2, slots };
+}
+
+/** Screen directions of the isometric floor axes (30° below the horizontal). */
+const DOWN_LEFT = { x: -Math.cos(Math.PI / 6), y: Math.sin(Math.PI / 6) };
+const DOWN_RIGHT = { x: Math.cos(Math.PI / 6), y: Math.sin(Math.PI / 6) };
+/** Neighbours on the floor may share this much of the smaller bounding box (isometric corners are empty). */
+const FLOOR_OVERLAP = 0.06;
+/** Gap between neighbours on the floor, as a share of the larger of the two heights. */
+const FLOOR_GAP = 0.08;
+
+function overlapArea(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): number {
+  const w = Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2);
+  const h = Math.min(a.y + a.h / 2, b.y + b.h / 2) - Math.max(a.y - a.h / 2, b.y - b.h / 2);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/**
+ * Objects standing apart on one floor, like the reference still lifes: the largest at the back, the others
+ * stepping towards the viewer along the isometric axes — down-left, then down-right, alternating — each just
+ * clear of what is already there plus a small gap. `mirror` starts down-right instead.
+ */
+export function floorArrangement(dims: readonly Dim[], mirror = false): Arrangement | null {
+  if (dims.length < 2 || dims.length > 4) return null;
+  const order = dims
+    .map((d) => d.index)
+    .sort((a, b) => {
+      const da = dims[a] as Dim;
+      const db = dims[b] as Dim;
+      return db.aw * db.ah - da.aw * da.ah || a - b;
+    });
+  const placed: { index: number; x: number; y: number; w: number; h: number }[] = [];
+  order.forEach((index, k) => {
+    const d = dims[index] as Dim;
+    if (k === 0) {
+      placed.push({ index, x: 0, y: 0, w: d.aw, h: d.ah });
+      return;
+    }
+    const from = placed[k - 1] as (typeof placed)[number];
+    const dir = (k % 2 === 1) !== mirror ? DOWN_LEFT : DOWN_RIGHT;
+    const step = 0.02 * Math.max(d.aw, d.ah, from.w, from.h);
+    let t = 0;
+    const clash = (x: number, y: number): boolean =>
+      placed.some((p) => overlapArea({ x, y, w: d.aw, h: d.ah }, p) > FLOOR_OVERLAP * Math.min(d.aw * d.ah, p.w * p.h));
+    while (clash(from.x + dir.x * t, from.y + dir.y * t) && t < 200 * step) t += step;
+    t += FLOOR_GAP * Math.max(d.ah, from.h);
+    placed.push({ index, x: from.x + dir.x * t, y: from.y + dir.y * t, w: d.aw, h: d.ah });
+  });
+  return { kind: 'floor', tiers: 1, slots: placed.map((p) => ({ index: p.index, cx: p.x, cy: p.y })) };
 }
 
 /** All candidate arrangements; `allowColumn` adds the staggered column for tall zones. */

@@ -174,6 +174,39 @@ describe('compose: the reference look', () => {
     expect(layers.findIndex((l) => l.motif === 'phone')).toBeGreaterThan(layers.findIndex((l) => l.motif === 'book'));
   });
 
+  it('stands objects apart on one floor instead of piling them in the centre', () => {
+    const pile = (inp: ComposeInput): number => {
+      const boxes = objectsOf(compose(inp).layers).map((l) => boxOf(inp, l));
+      let shared = 0;
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          const a = boxes[i] as Box;
+          const b = boxes[j] as Box;
+          const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+          const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+          if (w > 0 && h > 0) shared += w * h;
+        }
+      }
+      return shared / boxes.reduce((sum, b) => sum + b.width * b.height, 0);
+    };
+    for (const preset of PRESET_IDS) {
+      for (const motifs of [['folder', 'wallet', 'coin'], ['phone', 'puzzle'], ['coin', 'wallet', 'phone'], ['lamp', 'book'], ['bouquet', 'wallet']] as MotifId[][]) {
+        expect(pile(input(preset, 'composed', motifs)), `${preset} ${motifs.join('+')}`).toBeLessThanOrEqual(0.08);
+      }
+    }
+  });
+
+  it('puts the largest object at the back and steps the others towards the viewer', () => {
+    const inp = input('square', 'composed', ['folder', 'wallet', 'coin']);
+    const layers = objectsOf(compose(inp).layers);
+    const at = (m: MotifId): PlacedLayer => layers.find((l) => l.motif === m)!;
+    // Folder behind (higher up the floor), wallet down-left of it, coin down-right of the wallet.
+    expect(at('folder').y).toBeLessThan(at('wallet').y);
+    expect(at('wallet').x).toBeLessThan(at('folder').x);
+    expect(at('coin').x).toBeGreaterThan(at('wallet').x);
+    expect(at('coin').y).toBeGreaterThan(at('folder').y);
+  });
+
   it('never buries an object (up to 6 items)', () => {
     for (const preset of PRESET_IDS) {
       for (let count = 2; count <= 6; count += 1) {

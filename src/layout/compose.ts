@@ -5,7 +5,7 @@ import type {
   ComposeResult,
   PlacedLayer,
 } from '../domain/types';
-import { candidateArrangements, denseArrangements, makeDims, onSurface } from './arrange';
+import { candidateArrangements, denseArrangements, floorArrangement, makeDims, onSurface } from './arrange';
 import type { Arrangement, Dim } from './arrange';
 import { placeScenery } from './scenery';
 import { layerBounds, uncoveredFraction, unionBox } from './geometry';
@@ -21,7 +21,7 @@ export { placeScenery, sceneryCandidates } from './scenery';
  * the frame), below 1 when the scene is compact objects the references show whole with room for the background (a wallet
  * and a coin, a puzzle and a pen).
  */
-const BLEED = { single: 1.05, surface: 1.22, group: 0.8 } as const;
+const BLEED = { single: 1.05, surface: 1.22, group: 0.94 } as const;
 /**
  * The library is drawn at one physical scale (a book is five coins wide; S files are half the L size), and
  * the reference sheets show objects close to that native size on a 1080 px frame. A scene is never magnified
@@ -43,8 +43,10 @@ const OPTICAL_LIFT = 0.02;
 const SURFACES = new Set(['book', 'folder']);
 /** Objects resting on a surface: the reference look, preferred when it reads well. */
 const SURFACE_BONUS = 1.35;
-/** Preference of the diagonal (tiered) arrangements: the reference scenes are built on the isometric diagonal. */
-const DIAGONAL_BONUS = 1.2;
+/** How hard overlapping objects (outside «resting on a surface») are penalised. */
+const PILE_POWER = 3;
+/** Objects apart on one floor along the isometric axes: the reference still life, preferred over piles. */
+const FLOOR_BONUS = 1.4;
 /** Mild preference of an arrangement kind for a zone shape. */
 const SHAPE_BONUS = 1.08;
 /** The hero keeps at least this share of its bounds uncovered. */
@@ -97,6 +99,8 @@ interface Candidate {
   union: Box;
   unit: Pose[];
   minUncovered: number;
+  /** Share of the objects' area that overlaps another object (bounding boxes). */
+  pile: number;
 }
 
 function unitPoses(arrangement: Arrangement, dims: readonly Dim[]): Pose[] {
@@ -132,29 +136,43 @@ function evaluate(
   const union = unionBox(boxes);
   const scale = Math.min(zone.width / union.width, zone.height / union.height);
   const minUncovered = occlusion ? minUncoveredShare(dims, boxes, stacking) : 1;
-  return { arrangement, scale, union, unit, minUncovered };
+  let shared = 0;
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) shared += overlapOf(boxes[i] as Box, boxes[j] as Box);
+  }
+  const total = boxes.reduce((sum, b) => sum + b.width * b.height, 0);
+  return { arrangement, scale, union, unit, minUncovered, pile: total > 0 ? shared / total : 0 };
 }
 
-function preference(arrangement: Arrangement, zone: Box, count: number): number {
+function overlapOf(a: Box, b: Box): number {
+  const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+function preference(arrangement: Arrangement, zone: Box, _count: number): number {
   const aspect = zone.width / zone.height;
   let bonus = 1;
-  if (count >= 2 && arrangement.kind === 'tiers') bonus *= DIAGONAL_BONUS;
+  if (arrangement.kind === 'floor') bonus *= FLOOR_BONUS;
   if (arrangement.kind === 'surface') bonus *= SURFACE_BONUS;
   if (arrangement.kind === 'row' && aspect >= 1.2) bonus *= SHAPE_BONUS;
   if (arrangement.kind === 'column' && aspect <= 0.9) bonus *= SHAPE_BONUS;
   return bonus;
 }
 
-function candidateScore(c: Candidate, zone: Box, count: number): number {
+function candidateScore(c: Candidate, zone: Box, count: number, cap: number): number {
   const legibility = Math.min(1, c.minUncovered / MIN_UNCOVERED) ** OCCLUSION_POWER;
-  return c.scale * preference(c.arrangement, zone, count) * legibility;
+  // Objects piled on one another read as a heap; only «resting on a flat object» is meant to overlap.
+  const tidiness = c.arrangement.kind === 'surface' ? 1 : (1 - Math.min(c.pile, 0.9)) ** PILE_POWER;
+  // Above the native cap a bigger fit buys nothing: the scene is drawn at the cap anyway.
+  return Math.min(c.scale, cap) * preference(c.arrangement, zone, count) * legibility * tidiness;
 }
 
-function pickCandidate(candidates: readonly Candidate[], zone: Box, count: number): Candidate {
+function pickCandidate(candidates: readonly Candidate[], zone: Box, count: number, cap: number): Candidate {
   let best = candidates[0] as Candidate;
-  let bestScore = candidateScore(best, zone, count);
+  let bestScore = candidateScore(best, zone, count, cap);
   for (const c of candidates) {
-    const score = candidateScore(c, zone, count);
+    const score = candidateScore(c, zone, count, cap);
     if (score > bestScore + 1e-9) {
       best = c;
       bestScore = score;
@@ -220,6 +238,12 @@ function regionFor(box: Box, back: boolean, zone: Box, artboard: { width: number
   };
 }
 
+/** Largest scale a scene may be drawn at (see MAX_NATIVE_SCALE). */
+function nativeCapFor(items: readonly ComposeItem[], artboard: { width: number; height: number }): number {
+  const detailFactor = (items[0] as ComposeItem).meta.detail === 's' ? 2 : 1;
+  return (MAX_NATIVE_SCALE * detailFactor * Math.min(artboard.width, artboard.height)) / REFERENCE_FRAME;
+}
+
 /**
  * Scale the arrangement up past «fits the zone» and translate it so every object stays in its region, the
  * group as close to the (optically lifted) zone centre as the regions allow. Shrinks until it fits.
@@ -234,9 +258,7 @@ function fitScene(
 ): Pose[] {
   const margin = FRONT_MARGIN * Math.min(artboard.width, artboard.height);
   const unitBoxes = best.unit.map((pose, i) => layerBounds(pose, (items[i] as ComposeItem).meta));
-  const detailFactor = (items[0] as ComposeItem).meta.detail === 's' ? 2 : 1;
-  const nativeCap = (MAX_NATIVE_SCALE * detailFactor * Math.min(artboard.width, artboard.height)) / REFERENCE_FRAME;
-  let scale = Math.min(best.scale * bleed, nativeCap);
+  let scale = Math.min(best.scale * bleed, nativeCapFor(items, artboard));
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const boxes = unitBoxes.map((b) => ({ x: b.x * scale, y: b.y * scale, width: b.width * scale, height: b.height * scale }));
     let lx = -Infinity;
@@ -289,9 +311,13 @@ export function compose(input: ComposeInput, options: ComposeOptions = {}): Comp
     const surface = items.findIndex((it) => SURFACES.has(it.motif));
     const resting = surface >= 0 ? onSurface(dims, surface) : null;
     if (resting) arrangements.push(resting);
+    for (const mirror of [false, true]) {
+      const floor = floorArrangement(dims, mirror);
+      if (floor) arrangements.push(floor);
+    }
   }
   const candidates = arrangements.map((arrangement) => evaluate(arrangement, dims, items, zone, stacking, !dense));
-  const best = pickCandidate(candidates, zone, items.length);
+  const best = pickCandidate(candidates, zone, items.length, nativeCapFor(items, artboard));
 
   const backIndex = items.length === 1 ? 0 : (byAreaDescending(dims)[0] as number);
   const backIsSurface = SURFACES.has((items[backIndex] as ComposeItem).motif);
