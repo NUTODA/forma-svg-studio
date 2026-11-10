@@ -59,6 +59,8 @@ export interface ComposeLayersInput {
   backgroundObjects: boolean;
   /** Preferred background object (chosen for the meaning of the brief). */
   scenery?: MotifId;
+  /** Hand-set headline zone as fractions of the artboard (title layout). */
+  headlineBox?: Box;
   /** Parallel to `motifs`: objects the user hid. They keep their slot in the layout but get no echo. */
   hidden?: readonly boolean[];
   /** Indices into `motifs` from the bottom of the stack to the top; replaces the art-directed z-order. */
@@ -155,7 +157,13 @@ function composeParts(input: ComposeLayersInput): { parts: ComposedPart[]; zones
     return item === undefined ? [] : [item];
   });
   const result = compose(
-    { items, backgrounds, artboard: artboardOf(input.preset), mode: input.layout },
+    {
+      items,
+      backgrounds,
+      artboard: artboardOf(input.preset),
+      mode: input.layout,
+      ...(input.headlineBox ? { headlineBox: input.headlineBox } : {}),
+    },
     { stacking, sceneryLimit: Math.min(SCENERY_COUNT, MAX_LAYERS - items.length) },
   );
   const parts = result.layers.map((placed): ComposedPart => {
@@ -211,6 +219,7 @@ function settingsOf(doc: DocState, files: readonly AssetFileMeta[], motifs: Moti
     colorMode: doc.colorMode,
     backgroundObjects: doc.backgroundObjects,
     ...(doc.scenery ? { scenery: doc.scenery } : {}),
+    ...(doc.headlineBox ? { headlineBox: doc.headlineBox } : {}),
   };
 }
 
@@ -278,7 +287,7 @@ function commonScale(doc: DocState, files: readonly AssetFileMeta[]): number | n
 /** Free spot near the art-zone centre: each layer already there pushes the new one 24 px diagonally. */
 function freeSpot(doc: DocState): { x: number; y: number } {
   const board = artboardOf(doc.preset);
-  const zone = getZones(board, doc.layout).artZone;
+  const zone = getZones(board, doc.layout, doc.headlineBox).artZone;
   const cx = zone.x + zone.width / 2;
   const cy = zone.y + zone.height / 2;
   const near = (x: number, y: number): number =>
@@ -320,7 +329,7 @@ function commonSize(doc: DocState, meta: AssetFileMeta, motif: MotifId, files: r
 
 /** Factor (≤ 1) that makes an upright object of `size` fill at most NEW_LAYER_FIT of the art zone. */
 function fitFactor(doc: DocState, meta: AssetFileMeta, size: number): number {
-  const zone = getZones(artboardOf(doc.preset), doc.layout).artZone;
+  const zone = getZones(artboardOf(doc.preset), doc.layout, doc.headlineBox).artZone;
   const width = renderedWidth(size, meta);
   return Math.min(
     1,
@@ -376,7 +385,7 @@ export function placeNewLayer(
 
 /** Uniformly scale every layer about the art-zone centre (positions and sizes), keeping the composition's shape. */
 function scaleComposition(doc: DocState, factor: number): DocState {
-  const zone = getZones(artboardOf(doc.preset), doc.layout).artZone;
+  const zone = getZones(artboardOf(doc.preset), doc.layout, doc.headlineBox).artZone;
   const cx = zone.x + zone.width / 2;
   const cy = zone.y + zone.height / 2;
   const layers = doc.layers.map((l) =>
@@ -429,7 +438,7 @@ export function withBackgroundObjects(doc: DocState, files: readonly AssetFileMe
 
   const objectVariant = variantForLayer('object', doc.colorMode);
   const board = artboardOf(doc.preset);
-  const avoid = doc.layout === 'title' ? getZones(board, doc.layout).headlineZone : null;
+  const avoid = doc.layout === 'title' ? getZones(board, doc.layout, doc.headlineBox).headlineZone : null;
   const ranked = objects
     .map((layer, index) => ({ layer, index }))
     .filter(({ layer }) => !layer.hidden)

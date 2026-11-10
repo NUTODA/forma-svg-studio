@@ -88,6 +88,7 @@ function makeApi(overrides: Partial<EditorApi> = {}, doc: DocState = createDoc()
     setBackgroundObjects: noop,
     setShowPlane: noop,
     setShowHeadline: noop,
+    setHeadlineBox: noop,
     setHeadline: noop,
     recompose: noop,
     addCustomPalette: () => 'saved',

@@ -281,3 +281,57 @@
     transform-origin: center;
   }
 }
+
+/* Headline zone editing: the body moves it, the corners resize it; objects above it keep priority. */
+.artboard__zone-hit {
+  fill: transparent;
+  cursor: move;
+  pointer-events: all;
+}
+
+.artboard__zone-grip {
+  fill: var(--paper, #fff);
+  stroke: var(--ink-400);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+}
+
+.artboard__zone-grip--nw,
+.artboard__zone-grip--se {
+  cursor: nwse-resize;
+}
+
+.artboard__zone-grip--ne,
+.artboard__zone-grip--sw {
+  cursor: nesw-resize;
+}
+
+.artboard__stage[data-gesture='zone'] .artboard__zone {
+  opacity: 1;
+  stroke: var(--lilac-500, #6d5bd0);
+}
+
+.artboard__zone-reset {
+  position: absolute;
+  transform: translate(-100%, calc(-100% - 6px));
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--ink-700);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.artboard__zone-reset:hover {
+  background: var(--ivory-150);
+}
+
+.artboard__zone-reset:focus-visible {
+  outline: 2px solid var(--lilac-500, #6d5bd0);
+  outline-offset: 2px;
+}

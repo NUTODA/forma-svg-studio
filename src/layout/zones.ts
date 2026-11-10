@@ -1,4 +1,4 @@
-import type { ArtboardPreset, ArtboardPresetId, LayoutMode, Orientation, Size, Zones } from '../domain/types';
+import type { ArtboardPreset, ArtboardPresetId, Box, LayoutMode, Orientation, Size, Zones } from '../domain/types';
 
 // Non-breaking space keeps «4 : 5» and «1200 × 630» on one line.
 const NBSP = ' ';
@@ -29,10 +29,15 @@ export function orientationOf(size: Size): Orientation {
  * the frame (compose() keeps the front objects whole and lets only the back one bleed). In `title` mode the
  * side facing the headline is a hard edge.
  */
-export function getZones(artboard: Size, mode: LayoutMode): Zones {
+export function getZones(artboard: Size, mode: LayoutMode, headlineBox?: Box | null): Zones {
   const { width: w, height: h } = artboard;
   const orientation = orientationOf(artboard);
   const m = Math.round(0.075 * Math.min(w, h));
+
+  if (mode === 'title' && headlineBox) {
+    const headlineZone = headlineZoneFrom(headlineBox, artboard);
+    return { orientation, headlineZone, artZone: artZoneAround(headlineZone, artboard) };
+  }
 
   if (mode === 'title') {
     if (orientation === 'horizontal') {
@@ -52,4 +57,46 @@ export function getZones(artboard: Size, mode: LayoutMode): Zones {
   }
 
   return { orientation, artZone: { x: 0, y: 0, width: w, height: h }, headlineZone: null };
+}
+
+/** Smallest hand-set headline zone, as a share of each artboard side. */
+export const MIN_HEADLINE_SHARE = 0.12;
+
+/** A fractional headline box, clamped to sensible limits, in artboard units. */
+export function headlineZoneFrom(box: Box, artboard: Size): Box {
+  const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
+  const width = clamp(box.width, MIN_HEADLINE_SHARE, 1);
+  const height = clamp(box.height, MIN_HEADLINE_SHARE, 1);
+  const x = clamp(box.x, 0, 1 - width);
+  const y = clamp(box.y, 0, 1 - height);
+  return { x: x * artboard.width, y: y * artboard.height, width: width * artboard.width, height: height * artboard.height };
+}
+
+/** The headline zone of an artboard as fractions (the inverse of `headlineZoneFrom`). */
+export function headlineBoxOf(zone: Box, artboard: Size): Box {
+  return {
+    x: zone.x / artboard.width,
+    y: zone.y / artboard.height,
+    width: zone.width / artboard.width,
+    height: zone.height / artboard.height,
+  };
+}
+
+/**
+ * Where the scene goes when the headline zone is set by hand: the largest strip of the frame beside it
+ * (left, right, above or below), running to the frame edges like the default layouts, with a small gap.
+ */
+export function artZoneAround(zone: Box, artboard: Size): Box {
+  const { width: w, height: h } = artboard;
+  const gap = Math.round(0.03 * Math.min(w, h));
+  const strips: Box[] = [
+    { x: 0, y: 0, width: zone.x - gap, height: h },
+    { x: zone.x + zone.width + gap, y: 0, width: w - (zone.x + zone.width + gap), height: h },
+    { x: 0, y: 0, width: w, height: zone.y - gap },
+    { x: 0, y: zone.y + zone.height + gap, width: w, height: h - (zone.y + zone.height + gap) },
+  ];
+  const best = strips.reduce((a, b) => (Math.max(0, b.width) * Math.max(0, b.height) > Math.max(0, a.width) * Math.max(0, a.height) ? b : a));
+  // A zone that covers almost the whole frame still leaves the scene a sliver to sit in.
+  const minSide = 0.1 * Math.min(w, h);
+  return { ...best, width: Math.max(minSide, best.width), height: Math.max(minSide, best.height) };
 }

@@ -29,6 +29,7 @@ import {
 } from '../../doc/persist';
 import type {
   ArtboardPresetId,
+  Box,
   BriefMode,
   ColorMode,
   Detail,
@@ -368,7 +369,10 @@ export function useEditor(): EditorApi {
   const palette = useMemo(() => pickPalette(palettes, doc.paletteId), [palettes, doc.paletteId]);
   const color = useMemo(() => createColorResolver(palette), [palette]);
   const paper = useMemo(() => paperColor(palette), [palette]);
-  const zones = useMemo(() => getZones(ARTBOARD_PRESETS[doc.preset], doc.layout), [doc.preset, doc.layout]);
+  const zones = useMemo(
+    () => getZones(ARTBOARD_PRESETS[doc.preset], doc.layout, doc.headlineBox),
+    [doc.preset, doc.layout, doc.headlineBox],
+  );
 
   /* ---- templates ---- */
   const { templates, requestTemplates, ensureTemplates } = useTemplates(metaByFile, announce);
@@ -722,6 +726,16 @@ export function useEditor(): EditorApi {
     dispatch({ type: 'patchDoc', patch: { showHeadline: on } });
   }, []);
 
+  /** Move or resize the headline zone (fractions of the artboard; null = the format's default) and re-lay the scene out around it. */
+  const setHeadlineBox = useCallback(
+    (box: Box | null) => {
+      const { headlineBox: _current, ...rest } = currentDoc();
+      const next = recomposeDoc(box ? { ...rest, headlineBox: box } : rest, files);
+      replaceDoc(next, selectionIn(next));
+    },
+    [currentDoc, replaceDoc, selectionIn],
+  );
+
   const setHeadline = useCallback((text: string) => {
     dispatch({ type: 'patchDoc', patch: { headline: text }, coalesce: 'headline' });
   }, []);
@@ -947,6 +961,7 @@ export function useEditor(): EditorApi {
       setBackgroundObjects,
       setShowPlane,
       setShowHeadline,
+      setHeadlineBox,
       setHeadline,
       recompose,
       addCustomPalette,
@@ -996,6 +1011,7 @@ export function useEditor(): EditorApi {
       setBackgroundObjects,
       setShowPlane,
       setShowHeadline,
+      setHeadlineBox,
       setHeadline,
       recompose,
       addCustomPalette,

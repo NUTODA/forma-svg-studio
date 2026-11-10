@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   angleAbout,
+  draggedZone,
   artboardCaption,
   clientToArtboard,
   constrainAxis,
@@ -162,5 +163,29 @@ describe('nextRadioIndex', () => {
   it('ignores other keys', () => {
     expect(nextRadioIndex('a', 0, 3)).toBeNull();
     expect(nextRadioIndex('ArrowRight', 0, 0)).toBeNull();
+  });
+});
+
+describe('draggedZone', () => {
+  const board = { width: 1000, height: 500 };
+  const origin = { x: 100, y: 100, width: 300, height: 200 };
+
+  it('moves the zone and keeps it on the artboard', () => {
+    expect(draggedZone(origin, 'body', 50, -20, board)).toEqual({ x: 150, y: 80, width: 300, height: 200 });
+    expect(draggedZone(origin, 'body', 5000, 5000, board)).toEqual({ x: 700, y: 300, width: 300, height: 200 });
+    expect(draggedZone(origin, 'body', -5000, -5000, board)).toEqual({ x: 0, y: 0, width: 300, height: 200 });
+  });
+
+  it('resizes from a corner, keeping the opposite corner, the artboard and the minimum size', () => {
+    expect(draggedZone(origin, 'se', 100, 50, board)).toEqual({ x: 100, y: 100, width: 400, height: 250 });
+    expect(draggedZone(origin, 'nw', 50, 50, board)).toEqual({ x: 150, y: 150, width: 250, height: 150 });
+    // Shrinking past the minimum stops at 12 % of each side.
+    const tiny = draggedZone(origin, 'se', -1000, -1000, board);
+    expect(tiny.width).toBeCloseTo(120);
+    expect(tiny.height).toBeCloseTo(60);
+    // Growing past the artboard stops at its edge.
+    const huge = draggedZone(origin, 'ne', 5000, -5000, board);
+    expect(huge.x + huge.width).toBe(1000);
+    expect(huge.y).toBe(0);
   });
 });

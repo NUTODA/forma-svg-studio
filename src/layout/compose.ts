@@ -11,7 +11,7 @@ import { placeScenery } from './scenery';
 import { layerBounds, uncoveredFraction, unionBox } from './geometry';
 import { getZones } from './zones';
 
-export { ARTBOARD_PRESETS, getZones, orientationOf } from './zones';
+export { ARTBOARD_PRESETS, getZones, headlineBoxOf, headlineZoneFrom, MIN_HEADLINE_SHARE, orientationOf } from './zones';
 export { layerBounds } from './geometry';
 export { placeScenery, sceneryCandidates } from './scenery';
 
@@ -296,7 +296,7 @@ function fitScene(
  */
 export function compose(input: ComposeInput, options: ComposeOptions = {}): ComposeResult {
   const { items, backgrounds, artboard, mode } = input;
-  const zones = getZones(artboard, mode);
+  const zones = getZones(artboard, mode, input.headlineBox);
   if (items.length === 0) return { ...zones, layers: [] };
 
   const zone = zones.artZone;

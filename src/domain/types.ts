@@ -271,6 +271,11 @@ export interface DocState {
   backgroundObjects: boolean;
   /** Background object chosen for the brief's meaning (by the LLM); the layout falls back to its own table. */
   scenery?: MotifId;
+  /**
+   * Headline zone set by hand on the canvas, as fractions of the artboard (0..1), so it survives a format
+   * change. Absent: the default zone of the format. Used in the `title` layout only.
+   */
+  headlineBox?: Box;
   /** Optional palette plane under everything (`plane-<palette.plane>-<detail>.svg`, cover-fitted). */
   showPlane: boolean;
   /** Show the headline guide in the preview (never exported). */
@@ -302,6 +307,8 @@ export interface ComposeInput {
   backgrounds: ComposeItem[];
   artboard: Size;
   mode: LayoutMode;
+  /** Hand-set headline zone as fractions of the artboard (see `DocState.headlineBox`). */
+  headlineBox?: Box;
 }
 
 export interface PlacedLayer {

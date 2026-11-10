@@ -1,5 +1,6 @@
 /** Pure geometry and copy helpers for the artboard (kept DOM-free so they can be unit-tested). */
 import type { Box, Layer, LayerRole, Size } from '../domain/types';
+import { MIN_HEADLINE_SHARE } from '../layout/zones';
 
 export const MIN_ZOOM = 0.05;
 export const MAX_ZOOM = 1;
@@ -201,4 +202,35 @@ export function nextRadioIndex(key: string, index: number, count: number): numbe
     default:
       return null;
   }
+}
+
+/** Which part of the headline zone is dragged: the body moves it, a corner resizes it. */
+export type ZoneGrip = 'body' | 'nw' | 'ne' | 'sw' | 'se';
+
+/** The headline zone after dragging `grip` by (dx, dy): kept on the artboard and no smaller than the minimum. */
+export function draggedZone(
+  origin: Box,
+  grip: ZoneGrip,
+  dx: number,
+  dy: number,
+  artboard: { width: number; height: number },
+): Box {
+  const minW = MIN_HEADLINE_SHARE * artboard.width;
+  const minH = MIN_HEADLINE_SHARE * artboard.height;
+  if (grip === 'body') {
+    return {
+      ...origin,
+      x: Math.min(artboard.width - origin.width, Math.max(0, origin.x + dx)),
+      y: Math.min(artboard.height - origin.height, Math.max(0, origin.y + dy)),
+    };
+  }
+  let x0 = origin.x;
+  let y0 = origin.y;
+  let x1 = origin.x + origin.width;
+  let y1 = origin.y + origin.height;
+  if (grip === 'nw' || grip === 'sw') x0 = Math.min(x1 - minW, Math.max(0, x0 + dx));
+  else x1 = Math.max(x0 + minW, Math.min(artboard.width, x1 + dx));
+  if (grip === 'nw' || grip === 'ne') y0 = Math.min(y1 - minH, Math.max(0, y0 + dy));
+  else y1 = Math.max(y0 + minH, Math.min(artboard.height, y1 + dy));
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }

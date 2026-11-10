@@ -198,6 +198,30 @@ describe('validateDoc', () => {
     expect(validateDoc(legacy)?.layout).toBe('composed');
   });
 
+  it('keeps a valid hand-set headline zone and drops a broken one', () => {
+    const box = { x: 0.5, y: 0.1, width: 0.45, height: 0.8 };
+    expect(validateDoc({ ...createDoc(), headlineBox: box })?.headlineBox).toEqual(box);
+    for (const bad of [{ x: 0.8, y: 0, width: 0.5, height: 0.5 }, { x: -1, y: 0, width: 0.2, height: 0.2 }, { x: 0, y: 0, width: 0, height: 1 }, 'box', null]) {
+      const doc = validateDoc({ ...createDoc(), headlineBox: bad });
+      expect(doc).not.toBeNull();
+      expect(doc).not.toHaveProperty('headlineBox');
+    }
+  });
+
+  it('recompose lays the scene out around a hand-set headline zone and keeps it through a format change', () => {
+    const base = docFromMotifs({ ...createDoc(), layout: 'title', backgroundObjects: true }, ['book', 'coin', 'lamp'], FILES);
+    const headlineBox = { x: 0.05, y: 0.55, width: 0.9, height: 0.4 };
+    for (const preset of ['og', 'square', 'portrait'] as const) {
+      const next = recomposeDoc({ ...base, preset, headlineBox }, FILES);
+      expect(next.headlineBox).toEqual(headlineBox);
+      const headline = getZones(ARTBOARD_PRESETS[preset], 'title', headlineBox).headlineZone as Box;
+      for (const l of next.layers) {
+        const meta = metaOf(l.motif, 'l', l.role === 'object' ? 'main' : 'background');
+        expect(boxesIntersect(layerBounds(l, meta), headline), `${preset} ${l.motif}`).toBe(false);
+      }
+    }
+  });
+
   it('rejects absurd layer counts', () => {
     const layers = Array.from({ length: 501 }, (_, i) => layer({ id: `l${i + 1}` }));
     expect(validateDoc({ ...createDoc(), layers, nextId: 600 })).toBeNull();

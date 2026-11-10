@@ -102,6 +102,18 @@ function validateBrief(raw: unknown): DocState['brief'] | null {
   return mode && body !== null ? { mode, text: body } : null;
 }
 
+/** A box given as fractions of the artboard: four finite numbers within 0..1 that stay on it. Null otherwise. */
+function validateFractionBox(value: unknown): { x: number; y: number; width: number; height: number } | null {
+  if (!isPlainObject(value) || hasForbiddenKey(value)) return null;
+  const x = finite(own(value, 'x'));
+  const y = finite(own(value, 'y'));
+  const width = finite(own(value, 'width'));
+  const height = finite(own(value, 'height'));
+  if (x === null || y === null || width === null || height === null) return null;
+  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1 + 1e-9 || y + height > 1 + 1e-9) return null;
+  return { x, y, width, height };
+}
+
 /** Strict structural validation for persisted drafts; returns a fresh sanitised copy or null. */
 export function validateDoc(value: unknown): DocState | null {
   if (!isPlainObject(value) || hasForbiddenKey(value)) return null;
@@ -122,6 +134,7 @@ export function validateDoc(value: unknown): DocState | null {
   const showPlane = own(value, 'showPlane');
   const showHeadline = own(value, 'showHeadline');
   const scenery = oneOf(own(value, 'scenery'), MOTIF_IDS);
+  const headlineBox = validateFractionBox(own(value, 'headlineBox'));
 
   if (!preset || !detail || !layout || !colorMode || !paletteId || headline === null || !brief || !layers) return null;
   if (typeof backgroundObjects !== 'boolean' || typeof showPlane !== 'boolean' || typeof showHeadline !== 'boolean') {
@@ -147,5 +160,6 @@ export function validateDoc(value: unknown): DocState | null {
     layers,
     nextId,
     ...(scenery ? { scenery } : {}),
+    ...(headlineBox ? { headlineBox } : {}),
   };
 }

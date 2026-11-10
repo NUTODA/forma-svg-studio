@@ -11,7 +11,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { MOTIF_IDS, type AssetFileMeta, type Layer, type MotifId, type Size } from '../domain/types';
+import { MOTIF_IDS, type AssetFileMeta, type Box, type Layer, type MotifId, type Size } from '../domain/types';
 import { MOTIFS } from '../domain/motifs';
 import {
   layerAsset,
@@ -25,7 +25,7 @@ import {
   type RenderContext,
   type RenderedLayer,
 } from '../export/render';
-import { ARTBOARD_PRESETS, layerBounds } from '../layout/compose';
+import { ARTBOARD_PRESETS, headlineBoxOf, layerBounds } from '../layout/compose';
 import { detectMac, modShortcut, shiftKeyLabel } from './chromeKeys';
 import { MOTIF_DRAG_MIME, useEditorApi } from './state/editorContext';
 import {
@@ -33,6 +33,7 @@ import {
   clientToArtboard,
   constrainAxis,
   DRAG_THRESHOLD,
+  draggedZone,
   fitScale,
   formatZoom,
   HEADLINE_LINE_HEIGHT,
@@ -45,6 +46,7 @@ import {
   selectionFrame,
   type Point,
   type SelectionFrame,
+  type ZoneGrip,
 } from './Artboard.geometry';
 import './Artboard.css';
 
@@ -53,7 +55,8 @@ const HINT_ID = 'artboard-hint';
 const CAPTION_SPACE = 28;
 const HEADLINE_PLACEHOLDER = 'Заголовок';
 
-type GestureKind = 'move' | 'rotate';
+type GestureKind = 'move' | 'rotate' | 'zone';
+
 
 type Gesture =
   | {
@@ -76,7 +79,18 @@ type Gesture =
       start: Point;
       startRotation: number;
       engaged: boolean;
+    }
+  | {
+      kind: 'zone';
+      grip: ZoneGrip;
+      pointerId: number;
+      target: Element;
+      startClient: Point;
+      start: Point;
+      origin: Box;
+      engaged: boolean;
     };
+
 
 interface LayerEntry {
   layer: Layer;
@@ -220,6 +234,8 @@ export function Artboard(): JSX.Element {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [ringId, setRingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  /** Headline zone while it is being dragged (artboard units); the document changes only on release. */
+  const [zoneDraft, setZoneDraft] = useState<Box | null>(null);
 
   function pointerPoint(e: { clientX: number; clientY: number }): Point | null {
     const overlay = overlayRef.current;
@@ -243,9 +259,38 @@ export function Artboard(): JSX.Element {
     } catch {
       // the element may already be gone
     }
+    if (g.kind === 'zone') {
+      const draft = zoneDraftRef.current;
+      zoneDraftRef.current = null;
+      setZoneDraft(null);
+      // One undo step: the new zone and the scene re-laid out around it.
+      if (g.engaged && commit && draft) apiRef.current.setHeadlineBox(headlineBoxOf(draft, artboard));
+      return;
+    }
     if (!g.engaged) return;
     if (commit) apiRef.current.commitGesture();
     else apiRef.current.cancelGesture();
+  }
+
+  const zoneDraftRef = useRef<Box | null>(null);
+
+  function onZonePointerDown(e: ReactPointerEvent<SVGElement>, grip: ZoneGrip, zone: Box): void {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    if (rejectSecondaryPointer(e)) return;
+    const start = pointerPoint(e);
+    if (!start) return;
+    api.select(null);
+    startGesture({
+      kind: 'zone',
+      grip,
+      pointerId: e.pointerId,
+      target: e.currentTarget,
+      startClient: { x: e.clientX, y: e.clientY },
+      start,
+      origin: zone,
+      engaged: false,
+    });
   }
 
   function startGesture(g: Gesture): void {
@@ -330,6 +375,17 @@ export function Artboard(): JSX.Element {
     if (!g || g.pointerId !== e.pointerId) return;
     const point = pointerPoint(e);
     if (!point) return;
+    if (g.kind === 'zone') {
+      if (!g.engaged) {
+        if (Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y) < DRAG_THRESHOLD) return;
+        g.engaged = true;
+        setGesture('zone');
+      }
+      const next = draggedZone(g.origin, g.grip, point.x - g.start.x, point.y - g.start.y, artboard);
+      zoneDraftRef.current = next;
+      setZoneDraft(next);
+      return;
+    }
     if (g.kind === 'move') {
       if (!g.engaged) {
         if (Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y) < DRAG_THRESHOLD) return;
@@ -416,8 +472,9 @@ export function Artboard(): JSX.Element {
   const visibleCount = entries.length;
   const label = `Холст ${artboard.width} × ${artboard.height}: ${visibleCount} ${pluralRu(visibleCount, 'объект', 'объекта', 'объектов')}`;
   const caption = artboardCaption(preset.label, artboard);
-  const zone = api.zones.headlineZone;
+  const zone = zoneDraft ?? api.zones.headlineZone;
   const showHeadline = doc.layout === 'title' && doc.showHeadline && zone !== null;
+  const zoneIsCustom = Boolean(doc.headlineBox);
   const headlineText = doc.headline.trim();
   const headlineSize = zone ? headlineFontSize(headlineText || HEADLINE_PLACEHOLDER, zone) : 0;
   const hint = `Стрелки — сдвиг, ${shiftKeyLabel(mac)} — ×10, [ ] — поворот, ${modShortcut(mac, 'D')} — дубль, Delete — удалить, Esc — снять выделение.`;
@@ -511,14 +568,37 @@ export function Artboard(): JSX.Element {
             })}
 
             {showHeadline && zone ? (
-              <rect
-                className="artboard__zone"
-                x={zone.x}
-                y={zone.y}
-                width={zone.width}
-                height={zone.height}
-                rx={4 * unit}
-              />
+              <g className="artboard__zone-edit">
+                <rect
+                  className="artboard__zone"
+                  x={zone.x}
+                  y={zone.y}
+                  width={zone.width}
+                  height={zone.height}
+                  rx={4 * unit}
+                />
+                <rect
+                  className="artboard__zone-hit"
+                  x={zone.x}
+                  y={zone.y}
+                  width={zone.width}
+                  height={zone.height}
+                  aria-label="Зона заголовка: перетащите, чтобы сдвинуть, или потяните за угол"
+                  onPointerDown={(e) => onZonePointerDown(e, 'body', zone)}
+                />
+                {(['nw', 'ne', 'sw', 'se'] as const).map((grip) => (
+                  <rect
+                    key={grip}
+                    className={`artboard__zone-grip artboard__zone-grip--${grip}`}
+                    x={(grip.endsWith('w') ? zone.x : zone.x + zone.width) - 5 * unit}
+                    y={(grip.startsWith('n') ? zone.y : zone.y + zone.height) - 5 * unit}
+                    width={10 * unit}
+                    height={10 * unit}
+                    rx={2 * unit}
+                    onPointerDown={(e) => onZonePointerDown(e, grip, zone)}
+                  />
+                ))}
+              </g>
             ) : null}
 
             {entries.map((entry) => {
@@ -651,6 +731,18 @@ export function Artboard(): JSX.Element {
               </p>
               <span className="artboard__headline-tag label-caps">Зона заголовка · не в экспорте</span>
             </div>
+          ) : null}
+
+          {showHeadline && zone && zoneIsCustom && !zoneDraft ? (
+            <button
+              type="button"
+              className="artboard__zone-reset"
+              style={{ left: (zone.x + zone.width) * scale, top: zone.y * scale }}
+              onClick={() => api.setHeadlineBox(null)}
+              title="Вернуть зону заголовка, заданную форматом"
+            >
+              Сбросить зону
+            </button>
           ) : null}
 
           {total === 0 ? (

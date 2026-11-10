@@ -111,6 +111,8 @@ export interface EditorApi {
   /** Palette plane under the artwork. */
   setShowPlane(on: boolean): void;
   setShowHeadline(on: boolean): void;
+  /** Hand-set headline zone as fractions of the artboard; null restores the format's default. Re-lays the scene out. */
+  setHeadlineBox(box: import('../../domain/types').Box | null): void;
   setHeadline(text: string): void;
   recompose(): void;
 

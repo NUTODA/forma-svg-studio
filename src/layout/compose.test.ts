@@ -386,3 +386,49 @@ describe('compose options', () => {
     expect(pose(stacked, 1).size / pose(stacked, 0).size).toBeCloseTo(pose(plain, 1).size / pose(plain, 0).size, 9);
   });
 });
+
+describe('hand-set headline zone', () => {
+  const BOXES: Box[] = [
+    { x: 0.55, y: 0.05, width: 0.4, height: 0.9 }, // right column → scene on the left
+    { x: 0.05, y: 0.6, width: 0.9, height: 0.35 }, // bottom band → scene above
+    { x: 0.3, y: 0.05, width: 0.4, height: 0.25 }, // small top-centre box → scene below it
+  ];
+
+  it('scene zone is the largest strip beside the headline, running to the frame edges', () => {
+    const board = { width: 1200, height: 630 };
+    const right = getZones(board, 'title', BOXES[0]);
+    expect(right.headlineZone).toEqual({ x: 660, y: 31.5, width: 480, height: 567 });
+    expect(right.artZone.x).toBe(0);
+    expect(right.artZone.x + right.artZone.width).toBeLessThan(660);
+    const bottom = getZones(board, 'title', BOXES[1]);
+    expect(bottom.artZone.y).toBe(0);
+    expect(bottom.artZone.y + bottom.artZone.height).toBeLessThan(bottom.headlineZone!.y);
+  });
+
+  it('is ignored outside the title layout', () => {
+    expect(getZones({ width: 1080, height: 1080 }, 'composed', BOXES[0]).headlineZone).toBeNull();
+  });
+
+  it('clamps a box that is too small or off the artboard', () => {
+    const z = getZones({ width: 1000, height: 1000 }, 'title', { x: 0.98, y: -0.5, width: 0.01, height: 0.01 }).headlineZone!;
+    expect(z.width).toBeGreaterThanOrEqual(120 - 1e-9);
+    expect(z.height).toBeGreaterThanOrEqual(120 - 1e-9);
+    expect(z.x + z.width).toBeLessThanOrEqual(1000 + 1e-9);
+    expect(z.y).toBeGreaterThanOrEqual(0);
+  });
+
+  it('nothing — objects or background — reaches a hand-set zone, in every format', () => {
+    for (const preset of PRESET_IDS) {
+      for (const headlineBox of BOXES) {
+        for (const count of [1, 2, 3, 4]) {
+          const inp = { ...input(preset, 'title', sample(count), true), headlineBox };
+          const result = compose(inp);
+          expect(objectsOf(result.layers)).toHaveLength(count);
+          for (const l of result.layers) {
+            expect(boxesIntersect(boxOf(inp, l), result.headlineZone as Box), `${preset} ${JSON.stringify(headlineBox)} ${count}`).toBe(false);
+          }
+        }
+      }
+    }
+  });
+});
