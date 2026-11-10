@@ -147,10 +147,20 @@
   height: 14px;
 }
 
+/* Fixed layout: the one-line descriptions truncate instead of widening the table past the panel. */
 .palette__table {
   width: 100%;
   margin-top: var(--sp-1);
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.palette__col-swatch {
+  width: 24px;
+}
+
+.palette__col-hex {
+  width: 76px;
 }
 
 .palette__group {
@@ -170,6 +180,7 @@
 }
 
 .palette__role > .palette__role-text {
+  overflow: hidden;
   padding-right: var(--sp-2);
 }
 
@@ -191,6 +202,7 @@
 }
 
 .palette__role-hex {
+  width: 76px;
   text-align: right;
   white-space: nowrap;
 }

@@ -196,6 +196,11 @@ function RolesTable({ palette, onCopy }: { palette: Palette; onCopy: (hex: strin
   return (
     <table className="palette__table">
       <caption className="visually-hidden">Роли цвета палитры «{palette.name}»</caption>
+      <colgroup>
+        <col className="palette__col-swatch" />
+        <col />
+        <col className="palette__col-hex" />
+      </colgroup>
       <thead className="visually-hidden">
         <tr>
           <th scope="col">Цвет</th>
