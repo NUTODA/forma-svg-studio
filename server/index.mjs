@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildMessages, parseAnswer, parseRequest } from './interpret.mjs';
+import { contentType, loadStatic } from './static.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -44,8 +45,6 @@ function limited(ip) {
   hits.set(ip, list);
   return list.length > 20;
 }
-
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png', '.mp4': 'video/mp4' };
 
 function send(res, status, body, type = 'application/json') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -118,16 +117,11 @@ function warmUp() {
   void ask(MODEL, { title: 'Знания по кусочкам', catalog: [{ id: 'book', name: 'Книга', description: 'знания' }, { id: 'puzzle', name: 'Пазлы', description: 'части целого' }] });
 }
 
-function serveStatic(req, res) {
-  const dist = path.join(root, 'dist');
-  const url = new URL(req.url ?? '/', 'http://x');
-  let file = path.normalize(path.join(dist, decodeURIComponent(url.pathname)));
-  if (!file.startsWith(dist)) return send(res, 403, 'forbidden', 'text/plain');
-  if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
-  if (!fs.existsSync(file)) file = path.join(dist, 'index.html');
-  const body = fs.readFileSync(file);
-  res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream' });
-  res.end(body);
+async function serveStatic(req, res) {
+  const found = await loadStatic(path.join(root, 'dist'), req.url);
+  if (found.status !== 200) return send(res, found.status, found.error, 'text/plain; charset=utf-8');
+  res.writeHead(200, { 'Content-Type': contentType(found.file) });
+  res.end(found.body);
 }
 
 http
@@ -137,6 +131,7 @@ http
     if (pathname === '/api/interpret' && req.method === 'POST') return void interpret(req, res);
     if (pathname.startsWith('/api/')) return send(res, 404, { error: 'not-found' });
     if (process.env.FORMA_API_ONLY) return send(res, 404, { error: 'not-found' });
-    return serveStatic(req, res);
+    // A failure while serving a file must answer this request, never end the process.
+    serveStatic(req, res).catch(() => (res.headersSent ? res.end() : send(res, 500, 'server error', 'text/plain; charset=utf-8')));
   })
   .listen(PORT, process.env.HOST || '127.0.0.1', () => (warmUp(), console.log(`Forma server on http://${process.env.HOST || '127.0.0.1'}:${PORT} (LLM ${enabled ? 'on: ' + MODEL + (FALLBACK_MODEL ? ', fallback ' + FALLBACK_MODEL : '') : 'off'})`)));

@@ -152,13 +152,53 @@ describe('analyzeTitle', () => {
     expect(result.summary).toContain('слабое совпадение');
   });
 
-  it('falls back to a neutral available object with a warning when nothing matches', () => {
+  it('falls back to a neutral pair of available objects with a warning when nothing matches', () => {
     const result = analyzeTitle('Квантовая хромодинамика', ALL);
     expect(result.fallbackUsed).toBe(true);
-    expect(result.selected).toHaveLength(1);
-    expect(result.matches.find((m) => m.motif === result.selected[0])?.reasons[0]?.kind).toBe('fallback');
-    expect(result.issues.find((i) => i.code === 'no-match')?.level).toBe('warning');
+    expect(result.selected).toEqual(['book', 'folder']);
+    for (const motif of result.selected) {
+      expect(result.matches.find((m) => m.motif === motif)?.reasons[0]?.kind).toBe('fallback');
+    }
+    const warning = result.issues.find((i) => i.code === 'no-match');
+    expect(warning?.level).toBe('warning');
+    expect(warning?.message).toContain('показаны нейтральные объекты «Книга», «Папка»');
+    expect(warning?.message).toContain('это не толкование заголовка');
+    expect(result.summary).toBe('Явных совпадений нет — взяты нейтральные объекты «Книга», «Папка»');
     expect(result.unknownTokens).toEqual(['Квантовая', 'хромодинамика']);
+  });
+
+  it('gives an unknown but valid headline two neutral objects, not one', () => {
+    const result = analyzeTitle('Как пережить первый год в новом городе', ALL);
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.selected).toEqual(['book', 'folder']);
+    expect(result.themes).toEqual([]);
+  });
+
+  it('keeps the neutral fallback inside the limit, the library and the exclusions', () => {
+    const title = 'Как пережить первый год в новом городе';
+    // The limit wins: one object, and the copy says so.
+    const one = analyzeTitle(title, ALL, { max: 1 });
+    expect(one.selected).toEqual(['book']);
+    expect(one.issues.find((i) => i.code === 'no-match')?.message).toContain('показан нейтральный объект «Книга»');
+    expect(one.summary).toBe('Явных совпадений нет — взят нейтральный объект «Книга»');
+    // The neutral order skips objects without files …
+    expect(analyzeTitle(title, without('book', 'folder')).selected).toEqual(['lamp', 'pen']);
+    // … and a library with a single object gives a single neutral object.
+    expect(analyzeTitle(title, new Set<MotifId>(['coin'])).selected).toEqual(['coin']);
+    // Objects excluded with «без» are not brought back as neutral ones.
+    const excluded = analyzeTitle(`${title} без книги`, ALL);
+    expect(excluded.fallbackUsed).toBe(true);
+    expect(excluded.selected).toEqual(['folder', 'lamp']);
+    expect(excluded.excluded.map((e) => e.motif)).toEqual(['book']);
+    expect(analyzeTitle(`${title} без книги и папки`, ALL).selected).toEqual(['lamp', 'pen']);
+  });
+
+  it('selects nothing, and says why, when every available object is excluded', () => {
+    const result = analyzeTitle('Квантовая хромодинамика без книги', new Set<MotifId>(['book']));
+    expect(result.selected).toEqual([]);
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.summary).toBe('Объекты не подобраны');
+    expect(result.issues.some((i) => i.code === 'excluded')).toBe(true);
   });
 
   it('never selects a motif without files, and reports it', () => {
@@ -426,6 +466,27 @@ describe('analyzeTitle regressions', () => {
   it('short stems do not collide with unrelated words', () => {
     expect(analyzeTitle('Долгой дороги', ALL).themes.map((t) => t.id)).not.toContain('money');
     expect(analyzeTitle('Итоги 10 лет', ALL).themes.map((t) => t.id)).not.toContain('flowers');
+  });
+
+  it('does not read the verb «доходить» as income, but keeps the genuine income words', () => {
+    // «доходят» stems to «доход» like the noun; only the noun's own forms may reach the income key.
+    expect(stemWord('доходят')).toBe(stemWord('доход'));
+    for (const title of ['Онлайн-курсы, которые доходят до конца', 'Курс, который доходит до конца', 'Как доходить до конца']) {
+      const result = analyzeTitle(title, ALL);
+      expect(result.selected, title).not.toContain('coin');
+      expect(result.selected, title).not.toContain('wallet');
+      expect(result.themes.map((t) => t.id), title).not.toContain('money');
+      expect(result.matches.some((m) => m.reasons.some((r) => r.token.toLowerCase().startsWith('доход'))), title).toBe(false);
+    }
+    // The holdout headline keeps what it is really about: the courses.
+    expect(analyzeTitle('Онлайн-курсы, которые доходят до конца', ALL).selected).toContain('book');
+
+    // Noun forms and derived adjectives still mean income.
+    for (const title of ['Как увеличить доход', 'Пассивные доходы', 'Налог с дохода', 'Доходность', 'Доходный бизнес']) {
+      const result = analyzeTitle(title, ALL);
+      expect(result.selected[0], title).toBe('coin');
+      expect(result.themes.map((t) => t.id), title).toContain('money');
+    }
   });
 
   it('never calls a valid prefixed verb a typo', () => {

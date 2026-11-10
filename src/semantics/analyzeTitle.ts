@@ -25,6 +25,8 @@ export interface AnalyzeOptions {
 }
 
 const DEFAULT_MAX = 3;
+/** Objects of the neutral composition shown when nothing matches (the limit still applies). */
+const NEUTRAL_COUNT = 2;
 const NAME_SCORE = 10;
 const ALIAS_SCORE = 9;
 /** Primary-theme credit for name hits and synonym hits (a nudge, never a decision). */
@@ -395,17 +397,18 @@ export function analyzeTitle(
       if (best) selected.push(best[0]);
     }
   } else {
-    const neutral = FALLBACK_ORDER.find((id) => available.has(id)) ?? MOTIF_IDS.find((id) => available.has(id));
-    if (neutral !== undefined) {
+    // Nothing to go on: a neutral pair (one object is a poor illustration). Unavailable and «без»-excluded objects never come back.
+    const neutral = [...new Set([...FALLBACK_ORDER, ...MOTIF_IDS])]
+      .filter((id) => available.has(id) && !excludedSet.has(id))
+      .slice(0, Math.min(NEUTRAL_COUNT, max));
+    if (neutral.length > 0) {
       fallbackUsed = true;
-      selected = [neutral];
-      const idx = matches.findIndex((m) => m.motif === neutral);
+      selected = neutral;
       const fallbackReason = reason('fallback', '', 'Явных совпадений нет — взят нейтральный объект');
-      if (idx >= 0) {
-        const m = matches[idx] as MotifMatch;
-        m.reasons = [...m.reasons, fallbackReason];
-      } else {
-        matches.push({ motif: neutral, score: 0, strength: 'weak', reasons: [fallbackReason], available: true });
+      for (const motif of neutral) {
+        const found = matches.find((m) => m.motif === motif);
+        if (found !== undefined) found.reasons = [...found.reasons, fallbackReason];
+        else matches.push({ motif, score: 0, strength: 'weak', reasons: [fallbackReason], available: true });
       }
     }
   }
@@ -446,13 +449,12 @@ export function analyzeTitle(
     });
   }
   if (fallbackUsed) {
-    const chosen = selected[0];
     issues.push({
       level: 'warning',
       code: 'no-match',
       message:
         `Не нашлось объектов, подходящих по смыслу${unknownTokens.length > 0 ? ` (не распознано: ${unknownTokens.slice(0, 4).join(', ')})` : ''}. ` +
-        `Для начала показан нейтральный объект «${chosen === undefined ? '' : name(chosen)}» — это не толкование заголовка. ` +
+        `Для начала ${selected.length === 1 ? 'показан нейтральный объект' : 'показаны нейтральные объекты'} ${listNames(selected)} — это не толкование заголовка. ` +
         'Назовите предмет или тему: деньги, идея, музыка, документы, цветы.',
       action: { kind: 'example', label: 'Попробовать пример', replacement: EXAMPLE_TITLE },
     });
@@ -501,7 +503,7 @@ export function analyzeTitle(
   if (selected.length === 0) {
     summary = 'Объекты не подобраны';
   } else if (fallbackUsed) {
-    summary = `Явных совпадений нет — взят нейтральный объект «${name(selected[0] as MotifId)}»`;
+    summary = `Явных совпадений нет — ${selected.length === 1 ? 'взят нейтральный объект' : 'взяты нейтральные объекты'} ${listNames(selected)}`;
   } else {
     const themeNote = themes[0] === undefined ? '' : ` · тема: ${themes[0].label}`;
     const weakNote = top?.strength === 'weak' ? ' (слабое совпадение)' : '';
