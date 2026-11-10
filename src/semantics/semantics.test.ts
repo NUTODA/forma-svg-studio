@@ -1,0 +1,250 @@
+import { describe, expect, it } from 'vitest';
+import { MOTIFS } from '../domain/motifs';
+import { MOTIF_IDS, type MotifId } from '../domain/types';
+import { analyzeTitle } from './analyzeTitle';
+import { damerauLevenshtein } from './fuzzy';
+import { findNegations, tokenize } from './normalize';
+import { parseNames } from './parseNames';
+import { stemWord } from './stem';
+
+const ALL: ReadonlySet<MotifId> = new Set(MOTIF_IDS);
+const without = (...ids: MotifId[]): ReadonlySet<MotifId> => new Set(MOTIF_IDS.filter((id) => !ids.includes(id)));
+
+describe('motif catalogue', () => {
+  it('describes every motif with a name and aliases', () => {
+    for (const id of MOTIF_IDS) {
+      expect(MOTIFS[id].id).toBe(id);
+      expect(MOTIFS[id].name.length).toBeGreaterThan(2);
+      expect(MOTIFS[id].aliases.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('helpers', () => {
+  it('stems Russian inflections together', () => {
+    expect(stemWord('монеты')).toBe(stemWord('монета'));
+    expect(stemWord('наушников')).toBe(stemWord('наушники'));
+    expect(stemWord('деньгами')).toBe(stemWord('деньги'));
+  });
+
+  it('counts adjacent transpositions as one edit', () => {
+    expect(damerauLevenshtein('книга', 'кнгиа', 2)).toBe(1);
+    expect(damerauLevenshtein('книга', 'кнгиа')).toBe(1);
+    expect(damerauLevenshtein('телефон', 'телефно')).toBe(1);
+  });
+
+  it('negates the object after «без», including coordinated lists', () => {
+    const input = 'Подарок без телефона и наушников';
+    const tokens = tokenize(input);
+    const negated = findNegations(tokens, input);
+    const words = [...negated.keys()].map((i) => tokens[i]?.norm);
+    expect(words).toEqual(['телефона', 'наушников']);
+  });
+});
+
+describe('analyzeTitle', () => {
+  it('rejects empty and wordless input with an error', () => {
+    for (const text of ['', '   ', '123 !!!', 'и в на']) {
+      const result = analyzeTitle(text, ALL);
+      expect(result.selected).toEqual([]);
+      expect(result.issues.some((i) => i.level === 'error')).toBe(true);
+    }
+  });
+
+  it('picks the bouquet for the spring demo headline', () => {
+    const result = analyzeTitle('Весенний букет: как выбрать цветы к 8 Марта', ALL);
+    expect(result.selected[0]).toBe('bouquet');
+    expect(result.matches[0]?.strength).toBe('strong');
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.themes.map((t) => t.id)).toContain('holiday');
+  });
+
+  it('reads the money headline as coin + wallet', () => {
+    const result = analyzeTitle('Финансовая грамотность: как копить с первой зарплаты', ALL);
+    expect(result.selected).toEqual(['coin', 'wallet']);
+    expect(result.themes[0]?.id).toBe('money');
+  });
+
+  it.each([
+    ['Как найти идею для стартапа', 'lamp'],
+    ['Лучшие подкасты для дороги', 'headphones'],
+    ['Командная работа: собираем решение вместе', 'puzzle'],
+    ['Архив документов: наводим порядок', 'folder'],
+    ['Как вести дневник и делать заметки', 'pen'],
+    ['Десять книг, которые стоит прочитать', 'book'],
+    ['Мобильное приложение для звонков', 'phone'],
+    ['Планируем бюджет и покупки', 'wallet'],
+  ] as const)('«%s» → %s first', (title, motif) => {
+    expect(analyzeTitle(title, ALL).selected[0]).toBe(motif);
+  });
+
+  it('handles case, ё and inflected forms of names', () => {
+    expect(analyzeTitle('КОШЕЛЁК и КОШЕЛЬКА', ALL).selected).toContain('wallet');
+    expect(analyzeTitle('О пользе наушников', ALL).selected).toEqual(['headphones']);
+    expect(analyzeTitle('Без ё: кошелек', ALL).selected).toContain('wallet');
+  });
+
+  it('does not take a colour for flowers', () => {
+    const result = analyzeTitle('Какой цвет выбрать для сайта', ALL);
+    expect(result.selected).not.toContain('bouquet');
+  });
+
+  it('excludes negated objects and says so', () => {
+    const result = analyzeTitle('Книга и лампа, но без телефона', ALL);
+    expect(result.selected).toEqual(['book', 'lamp']);
+    expect(result.excluded).toEqual([{ motif: 'phone', token: 'телефона' }]);
+    expect(result.issues.some((i) => i.code === 'excluded')).toBe(true);
+  });
+
+  it('is honest about a weak match', () => {
+    const result = analyzeTitle('Полезные навыки для работы', ALL);
+    expect(result.matches[0]?.strength).toBe('weak');
+    expect(result.selected).toHaveLength(1);
+    expect(result.fallbackUsed).toBe(false);
+    expect(result.issues.find((i) => i.code === 'weak-match')?.level).toBe('warning');
+    expect(result.summary).toContain('слабое совпадение');
+  });
+
+  it('falls back to a neutral available object with a warning when nothing matches', () => {
+    const result = analyzeTitle('Квантовая хромодинамика', ALL);
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.selected).toHaveLength(1);
+    expect(result.matches.find((m) => m.motif === result.selected[0])?.reasons[0]?.kind).toBe('fallback');
+    expect(result.issues.find((i) => i.code === 'no-match')?.level).toBe('warning');
+    expect(result.unknownTokens).toEqual(['Квантовая', 'хромодинамика']);
+  });
+
+  it('never selects a motif without files, and reports it', () => {
+    const result = analyzeTitle('Идея и лампа для уюта', without('lamp'));
+    expect(result.selected).not.toContain('lamp');
+    const lamp = result.matches.find((m) => m.motif === 'lamp');
+    expect(lamp?.available).toBe(false);
+    expect(result.issues.some((i) => i.code === 'unavailable' && i.message.includes('Лампа'))).toBe(true);
+  });
+
+  it('errors when the library is empty', () => {
+    const result = analyzeTitle('Книга', new Set());
+    expect(result.selected).toEqual([]);
+    expect(result.issues.some((i) => i.code === 'no-assets' && i.level === 'error')).toBe(true);
+  });
+
+  it('suggests a replacement for a typo', () => {
+    const result = analyzeTitle('Новый телефан в подарок', ALL);
+    expect(result.selected).toContain('phone');
+    const typo = result.issues.find((i) => i.code === 'typo');
+    expect(typo?.action).toMatchObject({ kind: 'replace', token: 'телефан', replacement: 'телефон' });
+    expect(result.matches.find((m) => m.motif === 'phone')?.reasons.some((r) => r.kind === 'fuzzy')).toBe(true);
+  });
+
+  it('respects and clamps the selection limit, reporting trimming', () => {
+    const title = 'Книга, наушники, лампа, ручка, папка';
+    expect(analyzeTitle(title, ALL).selected).toHaveLength(3);
+    expect(analyzeTitle(title, ALL, { max: 5 }).selected).toHaveLength(5);
+    expect(analyzeTitle(title, ALL, { max: 99 }).selected).toHaveLength(5);
+    expect(analyzeTitle(title, ALL, { max: 0 }).selected).toHaveLength(1);
+    expect(analyzeTitle(title, ALL, { max: Number.NaN }).selected).toHaveLength(3);
+    expect(analyzeTitle(title, ALL).issues.some((i) => i.code === 'trimmed')).toBe(true);
+  });
+
+  it('is deterministic and keeps matches sorted best-first', () => {
+    const title = 'Деньги, идеи и музыка для стартапа';
+    const a = analyzeTitle(title, ALL);
+    expect(analyzeTitle(title, ALL)).toEqual(a);
+    const scores = a.matches.map((m) => m.score);
+    expect(scores).toEqual([...scores].sort((x, y) => y - x));
+    expect(a.selected.every((m) => a.matches.find((x) => x.motif === m)?.available)).toBe(true);
+  });
+
+  it('explains each match with reasons', () => {
+    const result = analyzeTitle('Деньги любят счёт', ALL);
+    const coin = result.matches.find((m) => m.motif === 'coin');
+    expect(coin?.reasons[0]?.kind).toBe('synonym');
+    expect(coin?.reasons[0]?.token).toBe('Деньги');
+  });
+});
+
+describe('parseNames', () => {
+  it('parses a plain list', () => {
+    const result = parseNames('книга, наушники, лампа, ручка', ALL);
+    expect(result.motifs).toEqual(['book', 'headphones', 'lamp', 'pen']);
+    expect(result.entries.map((e) => e.status)).toEqual(['matched', 'matched', 'matched', 'matched']);
+    expect(result.issues).toEqual([]);
+  });
+
+  it('is tolerant of case, ё, quotes, separators and aliases', () => {
+    // «Портмоне» is another name of the wallet: the repeat merges into the first position.
+    const result = parseNames('«КОШЕЛЁК»; Смартфон + настольная лампа\nПортмоне', ALL);
+    expect(result.motifs).toEqual(['wallet', 'wallet', 'phone', 'lamp']);
+    expect(result.entries.map((e) => e.via)).toEqual(['name', 'alias', 'alias', 'alias']);
+    expect(parseNames('кошелек', ALL).motifs).toEqual(['wallet']);
+    expect(parseNames('кошелька', ALL).entries[0]?.via).toBe('stem');
+  });
+
+  it('understands quantities', () => {
+    expect(parseNames('3 монеты', ALL).motifs).toEqual(['coin', 'coin', 'coin']);
+    expect(parseNames('монета ×2, книга x2', ALL).motifs).toEqual(['coin', 'coin', 'book', 'book']);
+    expect(parseNames('две ручки', ALL).entries[0]?.count).toBe(2);
+    const big = parseNames('9 монет', ALL);
+    expect(big.entries[0]?.count).toBe(4);
+    expect(big.issues.some((i) => i.code === 'count-clamped')).toBe(true);
+  });
+
+  it('merges exact repeats instead of duplicating entries silently', () => {
+    const result = parseNames('книга, Книга, КНИГА', ALL);
+    expect(result.entries).toHaveLength(3);
+    expect(result.motifs).toEqual(['book', 'book', 'book']);
+    expect(result.issues.find((i) => i.code === 'repeat')?.message).toContain('×3');
+    expect(parseNames('книга, книга', ALL)).toEqual(parseNames('книга, книга', ALL));
+  });
+
+  it('caps one object at four copies', () => {
+    expect(parseNames('книга ×3, книга ×3', ALL).motifs).toHaveLength(4);
+  });
+
+  it('suggests the closest object for unknown names', () => {
+    const result = parseNames('деньги, фонарь', ALL);
+    expect(result.entries[0]).toMatchObject({ status: 'unmatched', suggestion: 'coin' });
+    expect(result.entries[1]?.status).toBe('unmatched');
+    const issue = result.issues.find((i) => i.action?.token === 'деньги');
+    expect(issue?.action).toMatchObject({ kind: 'replace', replacement: 'Монета' });
+    expect(result.issues.find((i) => i.message.includes('фонарь'))?.message).toContain('Доступные:');
+    expect(result.issues.some((i) => i.code === 'nothing-recognized')).toBe(true);
+  });
+
+  it('treats one-letter typos as weak matches that still compose', () => {
+    const result = parseNames('ламба, телефан', ALL);
+    expect(result.entries.map((e) => e.status)).toEqual(['weak', 'weak']);
+    expect(result.entries.map((e) => e.via)).toEqual(['fuzzy', 'fuzzy']);
+    expect(result.motifs).toEqual(['lamp', 'phone']);
+    expect(result.issues.filter((i) => i.code === 'typo')).toHaveLength(2);
+  });
+
+  it('reports motifs without files and leaves them out', () => {
+    const result = parseNames('лампа, книга', without('lamp'));
+    expect(result.entries[0]).toMatchObject({ status: 'unavailable', motif: 'lamp' });
+    expect(result.motifs).toEqual(['book']);
+    expect(result.issues.find((i) => i.code === 'unavailable')?.message).toContain('её');
+  });
+
+  it('errors on empty input and an empty library', () => {
+    expect(parseNames('  , ;', ALL).issues[0]?.level).toBe('error');
+    expect(parseNames('книга', new Set()).issues.some((i) => i.code === 'no-assets')).toBe(true);
+  });
+
+  it('does not read «iPhone 15» as a quantity', () => {
+    const result = parseNames('iPhone 15', ALL);
+    expect(result.entries[0]).toMatchObject({ status: 'matched', motif: 'phone', count: 1 });
+  });
+
+  it('splits glued names and says so', () => {
+    const result = parseNames('книга ручка', ALL);
+    expect(result.motifs).toEqual(['book', 'pen']);
+    expect(result.issues.some((i) => i.code === 'missing-separator')).toBe(true);
+  });
+
+  it('limits the total number of objects', () => {
+    const result = parseNames('книга ×4, ручка ×4, лампа ×4', ALL);
+    expect(result.motifs).toHaveLength(8);
+    expect(result.issues.some((i) => i.code === 'too-many')).toBe(true);
+  });
+});
