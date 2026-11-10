@@ -121,4 +121,4 @@ http
     if (process.env.FORMA_API_ONLY) return send(res, 404, { error: 'not-found' });
     return serveStatic(req, res);
   })
-  .listen(PORT, () => console.log(`Forma server on http://localhost:${PORT} (LLM ${enabled ? 'on: ' + MODEL : 'off'})`));
+  .listen(PORT, process.env.HOST || '127.0.0.1', () => console.log(`Forma server on http://${process.env.HOST || '127.0.0.1'}:${PORT} (LLM ${enabled ? 'on: ' + MODEL : 'off'})`));
