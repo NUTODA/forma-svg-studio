@@ -1,0 +1,70 @@
+.brief__tabs {
+  display: flex;
+  width: 100%;
+  margin-bottom: var(--sp-3);
+}
+
+.brief__tab {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.brief__form {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.brief__textarea {
+  min-height: 72px;
+  max-height: 200px;
+}
+
+.brief__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.brief__hint {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.brief__counter {
+  flex: none;
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.brief__counter[data-near-limit='true'] {
+  color: var(--warn-600);
+}
+
+.brief__run {
+  position: relative;
+}
+
+.brief__run-label {
+  min-width: 0;
+}
+
+/* Hint is right-aligned and quiet; the label stays visually centred by the symmetric padding. */
+.brief__kbd {
+  position: absolute;
+  right: var(--sp-2);
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: rgba(255, 255, 255, 0.32);
+  border-bottom-width: 1px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+@media (max-width: 420px) {
+  .brief__kbd {
+    display: none;
+  }
+}

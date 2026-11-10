@@ -1,0 +1,124 @@
+.inspector__hint {
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-3);
+}
+
+.inspector__defs {
+  display: grid;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+}
+
+.inspector__def {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-12);
+}
+
+.inspector__def + .inspector__def {
+  border-top: 1px solid var(--line);
+}
+
+.inspector__def dt {
+  flex: none;
+  color: var(--text-3);
+}
+
+.inspector__def dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector__layer {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.inspector__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.inspector__name {
+  font-size: var(--fs-14);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  margin-right: auto;
+}
+
+.inspector__file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-10);
+  color: var(--text-3);
+}
+
+.inspector__file svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.inspector__file-name {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-10);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.inspector__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3) var(--sp-2);
+}
+
+.inspector__scale {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-1);
+}
+
+.inspector__scale-value {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.inspector__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+
+.inspector__sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px var(--sp-1);
+  background: var(--line);
+}
+
+.inspector__action--danger:hover:not(:disabled) {
+  background: var(--err-100);
+  color: var(--err-600);
+}

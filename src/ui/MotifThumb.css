@@ -1,0 +1,39 @@
+.motif-thumb {
+  display: block;
+  flex: none;
+  width: var(--thumb-size, 100%);
+  height: var(--thumb-size, 100%);
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.motif-thumb--loading,
+.motif-thumb--empty {
+  border-radius: var(--r-sm);
+}
+
+.motif-thumb--loading {
+  background: linear-gradient(100deg, var(--ivory-150) 30%, var(--ivory-50) 50%, var(--ivory-150) 70%);
+  background-size: 240% 100%;
+  animation: motif-thumb-shimmer 1.4s linear infinite;
+}
+
+.motif-thumb--empty {
+  border: 1px dashed var(--line-strong);
+}
+
+@keyframes motif-thumb-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motif-thumb--loading {
+    animation: none;
+    background: var(--ivory-150);
+  }
+}

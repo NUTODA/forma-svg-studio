@@ -1,0 +1,256 @@
+.analysis {
+  position: relative;
+  min-width: 0;
+}
+
+/* The frame follows the content height; padding/negative margin keep focus rings from being clipped. */
+.analysis__frame {
+  margin: calc(-1 * var(--sp-1));
+  overflow: hidden;
+  transition: height 200ms var(--ease);
+}
+
+.analysis__inner {
+  padding: var(--sp-1);
+}
+
+.analysis__body {
+  display: grid;
+  gap: var(--sp-3);
+  animation: analysis-in 200ms var(--ease) both;
+}
+
+@keyframes analysis-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.analysis__explainer {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--fs-12);
+  line-height: 1.45;
+  color: var(--text-3);
+}
+
+.analysis__explainer strong {
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.analysis__summary {
+  font-size: var(--fs-13);
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/* ---- title mode ---- */
+
+.analysis__matches,
+.analysis__entries {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis__match {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1);
+  border-radius: var(--r-sm);
+}
+
+.analysis__match + .analysis__match {
+  margin-top: 2px;
+}
+
+.analysis__match--selected {
+  background: var(--bg-selected);
+}
+
+.analysis__thumb {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-xs);
+  background: var(--bg-subtle);
+}
+
+.analysis__match-text {
+  display: grid;
+  min-width: 0;
+}
+
+.analysis__match-name {
+  font-size: var(--fs-13);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+}
+
+/* Reasons are the explanation: wrap to two lines rather than cutting it mid-word. */
+.analysis__reasons {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--fs-12);
+  line-height: 1.35;
+  color: var(--text-3);
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.analysis__match-end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.analysis__bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.analysis__bar {
+  width: 4px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--ivory-200);
+}
+
+.analysis__bar[data-on='true'] {
+  background: var(--ink-500);
+}
+
+.analysis__check {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.analysis__match--unavailable {
+  opacity: 0.6;
+}
+
+.analysis__match--unavailable .analysis__match-name {
+  color: var(--text-2);
+}
+
+.analysis__unavailable {
+  font-size: var(--fs-12);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.analysis__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.analysis__chip--excluded {
+  color: var(--text-2);
+}
+
+.analysis__chip--excluded s {
+  text-decoration-thickness: 1px;
+}
+
+.analysis__chip--unknown {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--text-3);
+  white-space: normal;
+  height: auto;
+  min-height: 22px;
+}
+
+/* ---- names mode ---- */
+
+.analysis__entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1) var(--sp-2);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.analysis__entry:last-child {
+  border-bottom: 0;
+}
+
+.analysis__raw {
+  flex: 1 1 80px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis__entry-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+}
+
+.analysis__count {
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+
+.analysis__resolved {
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+
+/* ---- issues ---- */
+
+.analysis__issues {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.analysis__issue {
+  align-items: flex-start;
+}
+
+.analysis__issue-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+
+.analysis__issue-body {
+  display: grid;
+  flex: 1;
+  gap: var(--sp-2);
+  justify-items: start;
+  min-width: 0;
+}
+
+.analysis__issue-body .btn {
+  max-width: 100%;
+  white-space: normal;
+  height: auto;
+  min-height: 26px;
+  padding-block: var(--sp-1);
+  text-align: left;
+}

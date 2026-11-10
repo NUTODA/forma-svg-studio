@@ -1,0 +1,72 @@
+/*
+ * Two floating pills over the workspace: format / detail / layout at the top, colour and
+ * decoration toggles at the bottom (like a design tool's canvas bars). The root overlays the
+ * workspace without taking part in its flow and lets pointer events through between the pills;
+ * Artboard reserves the space via --canvas-toolbar-h and --canvas-toolbar-bottom-h.
+ */
+
+.canvas-toolbar {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3);
+  pointer-events: none;
+}
+
+.canvas-toolbar__pill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1) var(--sp-2);
+  max-width: 100%;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-2);
+  pointer-events: auto;
+}
+
+.canvas-toolbar__seg .seg__item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.canvas-toolbar__seg .seg__item:disabled:hover {
+  color: var(--text-2);
+}
+
+.canvas-toolbar__seg .seg__item svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.canvas-toolbar__divider {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--line);
+}
+
+/* When a pill wraps, dangling dividers would only add noise. */
+@media (max-width: 760px) {
+  .canvas-toolbar__divider {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .canvas-toolbar {
+    padding: var(--sp-2);
+  }
+
+  .canvas-toolbar__pill {
+    gap: var(--sp-1);
+  }
+}

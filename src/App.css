@@ -1,0 +1,191 @@
+/* App shell: topbar / [brief + catalog | workspace | inspector + layers + palette] / statusbar */
+
+.app {
+  --app-left-w: var(--panel-left-w);
+  --app-right-w: var(--panel-right-w);
+
+  display: grid;
+  grid-template-columns: var(--app-left-w) minmax(0, 1fr) var(--app-right-w);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--statusbar-h);
+  grid-template-areas:
+    'top top top'
+    'left work right'
+    'status status status';
+  height: 100dvh;
+  min-width: 0;
+  background: var(--bg-workspace);
+}
+
+.app__top {
+  grid-area: top;
+  position: relative;
+  min-width: 0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  /* Above the workspace stacking context, so top-bar popovers cover the canvas bars. */
+  z-index: 20;
+}
+
+.app__left,
+.app__right {
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-panel);
+  overscroll-behavior: contain;
+}
+
+.app__left {
+  grid-area: left;
+  border-right: 1px solid var(--line);
+}
+
+.app__right {
+  grid-area: right;
+  border-left: 1px solid var(--line);
+}
+
+.app__workspace {
+  grid-area: work;
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--bg-workspace);
+  background-image: radial-gradient(circle at center, var(--ivory-300) 1px, transparent 1.5px);
+  background-size: var(--sp-6) var(--sp-6);
+  background-position: center;
+}
+
+.app__status {
+  grid-area: status;
+  min-width: 0;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--line);
+  z-index: 3;
+}
+
+/* Phone-only disclosure for examples + catalogue; inert on larger screens */
+.app__extras-toggle {
+  display: none;
+}
+
+.app__extras {
+  display: contents;
+}
+
+/* Skip link: visible on focus only */
+.app__skip {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 10;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--ivory-0);
+  font-weight: 500;
+  text-decoration: none;
+  transform: translateY(calc(-100% - var(--sp-4)));
+}
+
+.app__skip:focus-visible {
+  transform: none;
+  box-shadow: var(--ring);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .app__skip {
+    transition: transform var(--dur) var(--ease);
+  }
+}
+
+/* Narrower panels below 1440 so the canvas bars stay on one row at 1280. */
+@media (max-width: 1439px) {
+  .app {
+    --app-left-w: 300px;
+    --app-right-w: 272px;
+  }
+}
+
+/* Two columns: the inspector moves below the workspace and the page scrolls */
+@media (max-width: 1023px) {
+  .app {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-columns: var(--app-left-w) minmax(0, 1fr);
+    grid-template-rows: var(--topbar-h) auto auto var(--statusbar-h);
+    grid-template-areas:
+      'top top'
+      'left work'
+      'left right'
+      'status status';
+  }
+
+  .app__top {
+    position: sticky;
+    top: 0;
+  }
+
+  .app__left,
+  .app__right {
+    overflow: visible;
+  }
+
+  .app__workspace {
+    height: clamp(420px, 72dvh, 760px);
+  }
+
+  .app__right {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* Single column stack */
+@media (max-width: 759px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--topbar-h) auto auto auto var(--statusbar-h);
+    grid-template-areas:
+      'top'
+      'left'
+      'work'
+      'right'
+      'status';
+  }
+
+  .app__left {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .app__workspace {
+    height: 62vh;
+    min-height: 62vh;
+  }
+
+  .app__right {
+    border-top: 1px solid var(--line);
+  }
+
+  .app__extras-toggle {
+    display: flex;
+    width: calc(100% - 2 * var(--sp-4));
+    min-height: 44px;
+    margin: var(--sp-3) var(--sp-4);
+    justify-content: center;
+  }
+
+  /* Closed: hide the examples (nested in the brief) and the catalogue only */
+  .app__left[data-extras='closed'] .demo-list,
+  .app__left[data-extras='closed'] .app__extras {
+    display: none;
+  }
+
+  /* 44px touch targets for the primary brief actions */
+  .app .brief__tab,
+  .app .brief__run {
+    min-height: 44px;
+  }
+}

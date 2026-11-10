@@ -49,7 +49,8 @@
   --line-strong: var(--ivory-300);
   --text: var(--ink-900);
   --text-2: var(--ink-600);
-  --text-3: var(--ink-400);
+  /* #6f6978: 5.2:1 on panels, 4.7:1 on the workspace — small secondary text stays AA. */
+  --text-3: #6f6978;
   --accent: var(--lilac-600);
   --accent-hover: var(--lilac-700);
   --accent-soft: var(--lilac-100);
@@ -255,6 +256,15 @@ p {
 .btn--primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+/* Disabled primary stays legible (5.7:1) instead of fading to a washed-out lilac. */
+.btn--primary:disabled {
+  opacity: 1;
+  background: var(--lilac-100);
+  border-color: var(--lilac-200);
+  color: var(--lilac-700);
+  box-shadow: none;
 }
 
 .btn--ghost {

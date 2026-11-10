@@ -1,0 +1,160 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  height: var(--topbar-h);
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+
+.topbar__brand {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.topbar__wordmark {
+  font-family: var(--font-display);
+  font-size: var(--fs-20);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.topbar__descriptor {
+  white-space: nowrap;
+}
+
+.topbar__center {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.topbar__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.topbar__preset {
+  flex: none;
+  color: var(--text-3);
+}
+
+.topbar__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.topbar__divider {
+  width: 1px;
+  height: var(--sp-5);
+  margin: 0 var(--sp-2);
+  background: var(--line);
+}
+
+.topbar__new {
+  position: relative;
+}
+
+.topbar__confirm {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: var(--sp-3);
+  width: 248px;
+  max-width: calc(100vw - var(--sp-8));
+  padding: var(--sp-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-2);
+}
+
+.topbar__confirm-text {
+  font-size: var(--fs-13);
+  line-height: var(--lh-ui);
+  color: var(--text-2);
+}
+
+.topbar__confirm-text strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.topbar__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+
+@media (max-width: 1100px) {
+  .topbar__descriptor {
+    display: none;
+  }
+}
+
+/* Labels collapse to icon-only but stay in the accessibility tree. */
+@media (max-width: 960px) {
+  .topbar__label:not(.topbar__label--primary) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .topbar__btn:not(.btn--primary) {
+    padding: 0 var(--sp-2);
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
+  }
+
+  .topbar__center {
+    display: none;
+  }
+
+  .topbar__brand {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar__label--primary {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .topbar__btn.btn--primary {
+    padding: 0 var(--sp-2);
+  }
+
+  .topbar__divider {
+    margin: 0 var(--sp-1);
+  }
+}

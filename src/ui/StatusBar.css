@@ -1,0 +1,98 @@
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  height: var(--statusbar-h);
+  padding: 0 var(--sp-3) 0 var(--sp-4);
+  border-top: 1px solid var(--line);
+  background: var(--bg-panel);
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+
+.statusbar__message {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.statusbar__text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+}
+
+.statusbar__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--ink-400);
+}
+
+.statusbar__dot[data-level='success'] {
+  background: var(--ok-600);
+}
+
+.statusbar__dot[data-level='warning'] {
+  background: var(--warn-600);
+}
+
+.statusbar__dot[data-level='error'] {
+  background: var(--err-600);
+}
+
+.statusbar__meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--sp-4);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.statusbar__keys {
+  color: var(--text-2);
+}
+
+.statusbar__keys svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 900px) {
+  .statusbar__inventory {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .statusbar {
+    gap: var(--sp-2);
+    padding-left: var(--sp-3);
+  }
+
+  .statusbar__meta {
+    gap: var(--sp-2);
+  }
+
+  .statusbar__draft {
+    display: none;
+  }
+
+  .statusbar__keys span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+}

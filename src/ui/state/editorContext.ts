@@ -63,7 +63,8 @@ export interface EditorApi {
   savedAt: number | null;
 
   /* ---- brief ---- */
-  setBriefMode(mode: BriefMode): void;
+  /** Switches the brief tab; `text` replaces the brief text in the same atomic update (one undo step). */
+  setBriefMode(mode: BriefMode, text?: string): void;
   setBriefText(text: string): void;
   /** Analyse the current brief text and compose. Returns false when nothing could be composed. */
   runBrief(): boolean;

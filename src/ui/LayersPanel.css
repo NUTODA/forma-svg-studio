@@ -1,0 +1,161 @@
+.layers__count {
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.layers__empty {
+  padding: var(--sp-2) 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-13);
+  color: var(--text-3);
+}
+
+.layers__list {
+  display: grid;
+  gap: 1px;
+  margin: 0 calc(-1 * var(--sp-2));
+  padding: 0;
+  list-style: none;
+  max-height: 264px;
+}
+
+.layers__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  border-radius: var(--r-sm);
+  transition: background var(--dur) var(--ease);
+}
+
+.layers__row:hover {
+  background: var(--bg-hover);
+}
+
+.layers__row.is-selected {
+  background: var(--bg-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.layers__main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  height: 32px;
+  padding: 0 0 0 var(--sp-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.layers__main:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.layers__thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.layers__thumb > * {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.layers__thumb--plane {
+  color: var(--text-3);
+}
+
+.layers__thumb--plane svg {
+  width: 14px;
+  height: 14px;
+}
+
+.layers__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-13);
+}
+
+.layers__name--echo {
+  color: var(--text-2);
+}
+
+.layers__row.is-hidden .layers__thumb,
+.layers__row.is-hidden .layers__name {
+  opacity: 0.45;
+}
+
+.layers__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding-right: var(--sp-1);
+}
+
+.layers__action svg {
+  width: 14px;
+  height: 14px;
+}
+
+/*
+ * Secondary row controls appear on hover / keyboard focus / selection / touch.
+ * Specificity is raised to beat `.icon-btn:disabled { opacity }`, which otherwise kept
+ * the disabled ↑/↓ of the first/last row permanently visible.
+ */
+.layers__row .layers__reveal {
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.layers__row:hover .layers__reveal,
+.layers__row:focus-within .layers__reveal,
+.layers__row.is-selected .layers__reveal {
+  opacity: 1;
+}
+
+.layers__row:hover .layers__reveal:disabled,
+.layers__row:focus-within .layers__reveal:disabled,
+.layers__row.is-selected .layers__reveal:disabled {
+  opacity: 0.35;
+}
+
+.layers__eye.is-off {
+  color: var(--text-3);
+}
+
+@media (hover: none) {
+  .layers__row .layers__reveal {
+    opacity: 1;
+  }
+}
+
+.layers__plane {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  margin-top: var(--sp-2);
+  padding: var(--sp-1) 0 0 var(--sp-2);
+  border-top: 1px solid var(--line);
+}
+
+.layers__plane .icon-btn {
+  margin-right: var(--sp-1);
+}
