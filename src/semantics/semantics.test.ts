@@ -66,6 +66,17 @@ describe('analyzeTitle', () => {
   });
 
   it.each([
+    ['Знания по кусочкам', ['puzzle', 'book']],
+    ['Как мы учились по шагам', ['puzzle', 'book']],
+    ['Эффект домино', ['puzzle']],
+    ['Учиться слышать себя', ['headphones']],
+  ] as const)('interprets «%s» as %j', (title, motifs) => {
+    const result = analyzeTitle(title, ALL);
+    expect(result.selected).toEqual(motifs);
+    expect(result.fallbackUsed).toBe(false);
+  });
+
+  it.each([
     ['Как найти идею для стартапа', 'lamp'],
     ['Лучшие подкасты для дороги', 'headphones'],
     ['Командная работа: собираем решение вместе', 'puzzle'],

@@ -116,7 +116,30 @@ export interface Theme {
   motifs: Partial<Record<MotifId, number>>;
 }
 
+/** Headline used to demonstrate how a phrase can suggest more than one object. */
+export const EXAMPLE_TITLE = 'Знания по кусочкам';
+
 export const THEMES: Theme[] = [
+  {
+    id: 'learning-by-parts',
+    label: 'Учёба по частям',
+    keys: `${EXAMPLE_TITLE}:7, собрать знания:7, собрать знание по частям:7,
+      учиться по шагам:6, учёба по шагам:6, складывать знания:7`,
+    motifs: { puzzle: 1, book: 0.9 },
+  },
+  {
+    id: 'chain-reaction',
+    label: 'Цепочка событий',
+    keys: `эффект домино:7, принцип домино:7, цепная реакция:6`,
+    motifs: { puzzle: 1 },
+  },
+  {
+    id: 'active-listening',
+    label: 'Внимательное слушание',
+    keys: `слышать себя:7, услышать себя:7, слышать друг друга:7, услышать друг друга:7,
+      активное слушание:7`,
+    motifs: { headphones: 1 },
+  },
   {
     id: 'money',
     label: 'Деньги и финансы',
@@ -239,6 +262,3 @@ export const THEMES: Theme[] = [
 
 /** Neutral motifs offered when nothing matches (first available wins). */
 export const FALLBACK_ORDER: MotifId[] = ['book', 'folder', 'lamp', 'pen', 'puzzle', 'phone', 'coin'];
-
-/** Example headline offered as a way out of a dead end. */
-export const EXAMPLE_TITLE = 'Весенний букет: как выбрать цветы к 8 Марта';

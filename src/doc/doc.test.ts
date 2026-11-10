@@ -198,17 +198,17 @@ describe('validateDoc', () => {
 
 describe('DEMO_PRESETS', () => {
   it('matches the agreed demo set', () => {
-    expect(DEMO_PRESETS.map((d) => d.id)).toEqual(['spring-bouquet', 'first-salary', 'study-kit']);
-    const [spring, salary, study] = DEMO_PRESETS;
-    expect(spring).toMatchObject({
+    expect(DEMO_PRESETS.map((d) => d.id)).toEqual(['learning-by-parts', 'first-salary', 'study-kit']);
+    const [learning, salary, study] = DEMO_PRESETS;
+    expect(learning).toMatchObject({
       preset: 'og',
       layout: 'title',
       detail: 'l',
       paletteId: 'lavender',
       colorMode: 'color',
-      backgroundObjects: false,
+      backgroundObjects: true,
       showPlane: true,
-      brief: { mode: 'title', text: 'Весенний букет: как выбрать цветы к 8 Марта' },
+      brief: { mode: 'title', text: 'Знания по кусочкам' },
     });
     expect(salary).toMatchObject({
       preset: 'portrait',
@@ -227,7 +227,7 @@ describe('DEMO_PRESETS', () => {
       showPlane: true,
       brief: { mode: 'names', text: 'книга, наушники, лампа, ручка' },
     });
-    expect(spring?.label.replace(/ /g, ' ')).toBe('Букет к 8 Марта');
+    expect(learning?.label).toBe('Знания по кусочкам');
     expect(salary?.label).toBe('Первая зарплата');
     expect(study?.label).toBe('Набор для учёбы');
   });

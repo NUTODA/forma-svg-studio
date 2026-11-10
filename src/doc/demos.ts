@@ -1,18 +1,19 @@
 import type { DemoPreset } from '../domain/types';
+import { EXAMPLE_TITLE } from '../semantics/lexicon';
 
 /** Demonstrative presets: one by title (with headline zone), one by title (echoes), one by object names. */
 export const DEMO_PRESETS: readonly DemoPreset[] = [
   {
-    id: 'spring-bouquet',
-    label: 'Букет к 8 Марта',
-    description: 'Заголовок → композиция с зоной для текста',
-    brief: { mode: 'title', text: 'Весенний букет: как выбрать цветы к 8 Марта' },
+    id: 'learning-by-parts',
+    label: EXAMPLE_TITLE,
+    description: 'Метафора учёбы → композиция с зоной для текста',
+    brief: { mode: 'title', text: EXAMPLE_TITLE },
     preset: 'og',
     layout: 'title',
     detail: 'l',
     paletteId: 'lavender',
     colorMode: 'color',
-    backgroundObjects: false,
+    backgroundObjects: true,
     showPlane: true,
   },
   {

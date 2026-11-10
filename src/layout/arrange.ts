@@ -130,6 +130,19 @@ function column(dims: readonly Dim[], order: readonly number[]): Arrangement {
   return { kind: 'column', tiers: 1, slots };
 }
 
+/** Put the smaller object in front, offset to the left of the larger one. */
+function diagonalPair(a: Dim, b: Dim): Arrangement {
+  const [back, front] = a.aw * a.ah >= b.aw * b.ah ? [a, b] : [b, a];
+  return {
+    kind: 'tiers',
+    tiers: 2,
+    slots: [
+      { index: back.index, cx: 0, cy: 0 },
+      { index: front.index, cx: -0.34 * back.aw, cy: (back.ah + front.ah) / 2 - 0.22 * front.ah },
+    ],
+  };
+}
+
 /** Back-to-front groups after sorting by painted area (largest first), for each cut of `tiers` groups. */
 function tierGroups(dims: readonly Dim[], tiers: 2 | 3): number[][][] {
   const byArea = dims
@@ -158,6 +171,8 @@ export function candidateArrangements(dims: readonly Dim[], allowColumn: boolean
   const order = groundOrder(dims.length);
   const result: Arrangement[] = [singleRow(dims, order)];
   if (dims.length < 2) return result;
+  const [first, second] = dims;
+  if (dims.length === 2 && first && second) result.push(diagonalPair(first, second));
   for (const groups of tierGroups(dims, 2)) {
     for (const lifts of TIER_LIFT_VARIANTS[2]) result.push(tiered(dims, order, groups, lifts));
   }
