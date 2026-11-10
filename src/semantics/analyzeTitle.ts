@@ -299,14 +299,17 @@ export function analyzeTitle(
     for (const [id, weight] of bestTheme) themeScore.set(id, (themeScore.get(id) ?? 0) + weight);
   });
 
-  const order = (a: MotifMatch, b: MotifMatch): number =>
-    b.score - a.score || MOTIF_IDS.indexOf(a.motif) - MOTIF_IDS.indexOf(b.motif);
+  // Ties go to the motif mentioned first («Документы для налогового вычета» → папка, then монета).
   const firstPosition = new Map<MotifId, number>();
   positive.forEach((hit) => {
     for (const c of hit.contributions) {
       firstPosition.set(c.motif, Math.min(firstPosition.get(c.motif) ?? Infinity, hit.from));
     }
   });
+  const order = (a: MotifMatch, b: MotifMatch): number =>
+    b.score - a.score ||
+    (firstPosition.get(a.motif) ?? Infinity) - (firstPosition.get(b.motif) ?? Infinity) ||
+    MOTIF_IDS.indexOf(a.motif) - MOTIF_IDS.indexOf(b.motif);
 
   const matches: MotifMatch[] = [];
   for (const [motif, list] of perMotif) {
@@ -326,11 +329,7 @@ export function analyzeTitle(
     }
     matches.push({ motif, score, strength: strengthOf(score), reasons, available: available.has(motif) });
   }
-  matches.sort(
-    (a, b) =>
-      order(a, b) ||
-      (firstPosition.get(a.motif) ?? 0) - (firstPosition.get(b.motif) ?? 0),
-  );
+  matches.sort(order);
 
   /* ---- selection (available motifs only) ---- */
   const issues: InputIssue[] = [];
@@ -384,11 +383,15 @@ export function analyzeTitle(
     }
   }
 
-  /* ---- themes ---- */
+  /* ---- themes: only topics that speak for at least one selected motif ---- */
+  const explainsSelection = (id: string): boolean =>
+    !fallbackUsed && selected.some((motif) => (THEME_BY_ID.get(id)?.motifs[motif] ?? 0) > 0);
+  const heroTheme = selected[0] === undefined ? undefined : PRIMARY_THEME[selected[0]];
   const themes = [...themeScore.entries()]
     .map(([id, score]) => ({ id, label: THEME_BY_ID.get(id)?.label ?? id, score: round(Math.min(THEME_CAP, score)) }))
-    .filter((t) => t.score >= THEME_REPORT_AT)
-    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .filter((t) => t.score >= THEME_REPORT_AT && explainsSelection(t.id))
+    // Equal scores: the hero's own topic names the composition best.
+    .sort((a, b) => b.score - a.score || Number(b.id === heroTheme) - Number(a.id === heroTheme) || a.id.localeCompare(b.id))
     .slice(0, MAX_THEMES);
 
   /* ---- issues ---- */
@@ -448,13 +451,7 @@ export function analyzeTitle(
       message: `Подходящих объектов больше, чем помещается (${max}): показаны самые релевантные. Остальные можно добавить из каталога.`,
     });
   }
-  if (!fallbackUsed && unknownTokens.length > 0 && selected.length > 0) {
-    issues.push({
-      level: 'info',
-      code: 'unknown-words',
-      message: `Не распознано: ${unknownTokens.slice(0, 6).join(', ')} — на подбор это не повлияло.`,
-    });
-  }
+  // Unrecognised words of a successful run are reported only through `unknownTokens` (shown as chips).
 
   /* ---- summary ---- */
   let summary: string;

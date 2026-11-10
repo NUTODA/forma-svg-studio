@@ -176,7 +176,27 @@ export interface LexHit {
   entry: LexEntry;
 }
 
-/** Lexicon entry for tokens[i .. i+n-1]: exact stem sequence, or (single word) a long-stem prefix. */
+/** Verbal prefixes, longest first: «почитать» / «прочитать» → «читать», «написать» → «писать». */
+const VERB_PREFIXES = ['пере', 'про', 'под', 'при', 'раз', 'рас', 'по', 'на', 'за', 'вы', 'до', 'от', 'со', 'с', 'у'];
+/** Infinitive / finite / past endings: only words that look like verbs lose their prefix. */
+const VERB_ENDING = /(?:ть|ться|ти|чь|ешь|ет|ют|ут|ит|ат|ят|ем|им|ете|ите|ал|ала|али|ало|ил|ила|или|ел|ела|ели)$/;
+const MIN_ROOT = 3;
+
+/** Lexicon entry of a prefixed verb whose bare form is in the lexicon, or null. */
+function lookupPrefixedVerb(token: Token): LexEntry | null {
+  if (!VERB_ENDING.test(token.norm)) return null;
+  for (const prefix of VERB_PREFIXES) {
+    if (!token.stem.startsWith(prefix) || token.stem.length - prefix.length < MIN_ROOT) continue;
+    const entry = LEX_INDEX.get(token.stem.slice(prefix.length));
+    if (entry !== undefined) return entry;
+  }
+  return null;
+}
+
+/**
+ * Lexicon entry for tokens[i .. i+n-1]: exact stem sequence, or (single word) a long-stem prefix,
+ * or a prefixed verb of a lexicon verb.
+ */
 export function lookupLexicon(tokens: readonly Token[], i: number, n: number): LexEntry | null {
   const slice = tokens.slice(i, i + n);
   if (slice.length !== n) return null;
@@ -184,14 +204,15 @@ export function lookupLexicon(tokens: readonly Token[], i: number, n: number): L
   const exact = LEX_INDEX.get(slice.map((t) => t.stem).join(' '));
   if (exact !== undefined) return exact;
   if (n !== 1) return null;
-  const stem = (slice[0] as Token).stem;
+  const token = slice[0] as Token;
+  const stem = token.stem;
   if (isNumeric(stem)) return null;
   for (const key of PREFIX_KEYS) {
     if (stem.length > key.length && stem.length - key.length <= 4 && stem.startsWith(key)) {
       return LEX_INDEX.get(key) ?? null;
     }
   }
-  return null;
+  return lookupPrefixedVerb(token);
 }
 
 export function maxLexiconWords(): number {

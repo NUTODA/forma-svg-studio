@@ -247,4 +247,65 @@ describe('parseNames', () => {
     expect(result.motifs).toHaveLength(8);
     expect(result.issues.some((i) => i.code === 'too-many')).toBe(true);
   });
+
+  it('counts a name repeated without a separator as several instances', () => {
+    const result = parseNames('телефон телефон', ALL);
+    expect(result.motifs).toEqual(['phone', 'phone']);
+    expect(result.issues.some((i) => i.code === 'missing-separator')).toBe(true);
+  });
+
+  it('suggests the nearest real object for drawings the library does not have', () => {
+    const result = parseNames('карандаш, блокнот', ALL);
+    expect(result.entries.map((e) => [e.status, e.suggestion])).toEqual([
+      ['unmatched', 'pen'],
+      ['unmatched', 'book'],
+    ]);
+    expect(result.issues.some((i) => i.action?.replacement === 'Ручка')).toBe(true);
+  });
+});
+
+describe('analyzeTitle regressions', () => {
+  const cases: { title: string; first?: MotifId; includes?: MotifId[]; theme?: string }[] = [
+    { title: 'Лучшие подкасты для долгой дороги', first: 'headphones', theme: 'Музыка и звук' },
+    { title: 'Документы для налогового вычета', first: 'folder', includes: ['coin'] },
+    { title: 'Что почитать в отпуске', first: 'book' },
+    { title: 'Как написать резюме, которое прочитают', includes: ['pen', 'folder'] },
+    { title: 'Удалённая работа: как не потеряться в чатах', includes: ['phone', 'folder'] },
+    { title: 'Бюрократия без боли: оформляем справки онлайн', first: 'folder' },
+    { title: 'Ночь в библиотеке', first: 'book', theme: 'Чтение и знания' },
+    { title: 'Кэшбэк, скидки и подписки: куда утекают деньги', includes: ['wallet', 'coin'] },
+    { title: 'Подарок учителю на 1 сентября', first: 'bouquet', includes: ['book'] },
+  ];
+  for (const c of cases) {
+    it(c.title, () => {
+      const a = analyzeTitle(c.title, ALL, { max: 3 });
+      if (c.first) expect(a.selected[0]).toBe(c.first);
+      for (const motif of c.includes ?? []) expect(a.selected).toContain(motif);
+      if (c.theme) expect(a.themes[0]?.label).toBe(c.theme);
+    });
+  }
+
+  it('only reports themes that explain a selected motif', () => {
+    for (const c of cases) {
+      const a = analyzeTitle(c.title, ALL, { max: 3 });
+      expect(a.themes.every((t) => !t.label.includes('Деньги') || a.selected.some((m) => m === 'coin' || m === 'wallet'))).toBe(true);
+    }
+  });
+
+  it('short stems do not collide with unrelated words', () => {
+    expect(analyzeTitle('Долгой дороги', ALL).themes.map((t) => t.id)).not.toContain('money');
+    expect(analyzeTitle('Итоги 10 лет', ALL).themes.map((t) => t.id)).not.toContain('flowers');
+  });
+
+  it('never calls a valid prefixed verb a typo', () => {
+    for (const title of ['Что почитать в отпуске', 'Как написать письмо', 'Прочитают ли это']) {
+      expect(analyzeTitle(title, ALL).issues.some((i) => i.code === 'typo')).toBe(false);
+    }
+  });
+
+  it('the rule interpreter is the default plug-in and matches analyzeTitle', async () => {
+    const { ruleInterpreter } = await import('./interpreter');
+    const title = 'Идея, которая изменит команду';
+    expect(await ruleInterpreter.interpret(title, ALL, { max: 3 })).toEqual(analyzeTitle(title, ALL, { max: 3 }));
+  });
 });

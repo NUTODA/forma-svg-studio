@@ -74,6 +74,8 @@ interface Resolved {
   entry: Omit<NameEntry, 'count'>;
   /** Fragment word that produced the entry (for the replace action). */
   token: string;
+  /** How many times the name occurs in the fragment («телефон телефон» → 2). */
+  occurrences?: number;
 }
 
 function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolved[] {
@@ -89,6 +91,7 @@ function resolveFragment(text: string, available: ReadonlySet<MotifId>): Resolve
       const raw = distinct.length === 1 ? text : sourceSlice(text, tokens, span.from, span.to);
       return {
         token: raw,
+        occurrences: spans.filter((s) => s.motif === span.motif).length,
         entry: {
           raw,
           status: available.has(span.motif) ? 'matched' : 'unavailable',
@@ -170,8 +173,8 @@ export function parseNames(input: string, available: ReadonlySet<MotifId>): Name
     const resolved = resolveFragment(quantity.text, available);
     const requested = quantity.requested;
     const single = resolved.length === 1;
-    for (const { entry, token } of resolved) {
-      let count = 1;
+    for (const { entry, token, occurrences = 1 } of resolved) {
+      let count = Math.min(MAX_COUNT, occurrences);
       if (single && requested !== undefined) {
         count = Math.min(MAX_COUNT, Math.max(1, requested));
         if (requested < 1 || requested > MAX_COUNT) clamped.push(entry.raw);
@@ -179,7 +182,7 @@ export function parseNames(input: string, available: ReadonlySet<MotifId>): Name
       entries.push({ ...entry, count });
       collectEntryIssues(entry, token, available, issues);
     }
-    if (resolved.length > 1) {
+    if (resolved.length > 1 || resolved.some((r) => (r.occurrences ?? 1) > 1)) {
       issues.push({
         level: 'info',
         code: 'missing-separator',
