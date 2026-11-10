@@ -12,6 +12,7 @@ import type {
   MotifId,
   NamesParse,
   Palette,
+  PlaneFileMeta,
   TitleAnalysis,
   Zones,
 } from '../../domain/types';
@@ -44,6 +45,7 @@ export interface EditorApi {
   canRedo: boolean;
   /** Real files from public/assets (manifest). */
   files: readonly AssetFileMeta[];
+  planes: readonly PlaneFileMeta[];
   /** Motifs that have at least one real file. */
   available: ReadonlySet<MotifId>;
   /** Templates loaded so far, keyed by file name. */
@@ -91,7 +93,10 @@ export interface EditorApi {
   setLayout(mode: LayoutMode): void;
   setColorMode(mode: ColorMode): void;
   setPalette(id: string): void;
-  setShowBackground(on: boolean): void;
+  /** Decorative monochrome echoes behind the objects (re-composes the echo layers only). */
+  setBackgroundObjects(on: boolean): void;
+  /** Palette plane under the artwork. */
+  setShowPlane(on: boolean): void;
   setShowHeadline(on: boolean): void;
   setHeadline(text: string): void;
   recompose(): void;

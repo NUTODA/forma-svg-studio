@@ -2,6 +2,7 @@
 import type {
   ArtboardPresetId,
   AssetFileMeta,
+  ColorMode,
   DemoPreset,
   Detail,
   DocState,
@@ -11,7 +12,7 @@ import type {
   Zones,
 } from '../domain/types';
 
-/** Empty document with art-directed defaults (og 1200×630, composed, L, ivory-lilac, backgrounds on). */
+/** Empty document with art-directed defaults (og 1200×630, composed, L, lavender, colour, plane off, echoes off). */
 export function createDoc(): DocState {
   throw new Error('not implemented');
 }
@@ -28,7 +29,8 @@ export interface ComposeLayersInput {
   preset: ArtboardPresetId;
   layout: LayoutMode;
   detail: Detail;
-  showBackground: boolean;
+  colorMode: ColorMode;
+  backgroundObjects: boolean;
 }
 
 export interface ComposeLayersResult {
@@ -49,7 +51,7 @@ export function objectMotifs(_doc: DocState): MotifId[] {
   throw new Error('not implemented');
 }
 
-/** Re-run the layout for the document's current motifs and settings (used by preset/layout/background changes). */
+/** Re-run the layout for the document's current motifs and settings (used by preset/layout/echo changes). */
 export function recomposeDoc(_doc: DocState, _files: readonly AssetFileMeta[]): DocState {
   throw new Error('not implemented');
 }

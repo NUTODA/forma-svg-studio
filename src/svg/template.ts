@@ -1,5 +1,5 @@
 // CONTRACT STUB — owned by the SVG core agent. Signatures are fixed; bodies to be implemented.
-import type { Box, Variant } from '../domain/types';
+import type { Box, SourcePaletteId } from '../domain/types';
 
 /**
  * A pre-processed, sanitised bundled SVG ready for fast per-instance rendering.
@@ -8,7 +8,8 @@ import type { Box, Variant } from '../domain/types';
  */
 export interface SvgTemplate {
   file: string;
-  variant: Variant;
+  /** Palette the drawing's colours come from (objects: `lavender`; planes: their own). */
+  source: SourcePaletteId;
   viewBox: Box;
   bounds: Box;
   colors: string[];
@@ -28,14 +29,15 @@ export function analyzeSvgSource(_source: string): SvgAnalysis {
   throw new Error('not implemented');
 }
 
-export function buildTemplate(_source: string, _info: { file: string; variant: Variant }): SvgTemplate {
+export function buildTemplate(_source: string, _info: { file: string; source: SourcePaletteId }): SvgTemplate {
   throw new Error('not implemented');
 }
 
 /**
  * Produce standalone markup (one <g>…</g>) for one instance:
  * every id becomes `${idPrefix}${id}`, every url(#id) / href="#id" / xlink:href="#id" reference
- * is rewritten accordingly, every paint colour is passed through `color`.
+ * is rewritten accordingly, every paint colour (normalised `#rrggbb`) is passed through `color`.
+ * `idPrefix` must match /^[A-Za-z][A-Za-z0-9_-]*$/.
  */
 export function instantiate(
   _template: SvgTemplate,

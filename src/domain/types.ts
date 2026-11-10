@@ -4,6 +4,7 @@
  * asset pipeline, semantics, palette, layout, editor and UI stay decoupled.
  */
 
+/** The 10 motifs of the Figma library (final ids, see ASSET-NOTES.md). */
 export const MOTIF_IDS = [
   'book',
   'phone',
@@ -12,18 +13,26 @@ export const MOTIF_IDS = [
   'headphones',
   'lamp',
   'bouquet',
-  'notebook',
+  'wallet',
   'folder',
-  'pencil',
+  'pen',
 ] as const;
 export type MotifId = (typeof MOTIF_IDS)[number];
 
 /** Artwork detail level: `s` — simplified, `l` — detailed. Independent from aspect ratio. */
 export type Detail = 's' | 'l';
-/** Source drawing variant: `main` — coloured object, `background` — monochrome decorative plane. */
+/** Source drawing variant: `main` — coloured object, `background` — monochrome secondary version. */
 export type Variant = 'main' | 'background';
-/** How a layer participates in the composition. */
+/**
+ * How a layer participates in the composition:
+ * `object` — foreground motif (main file, or background file in mono colour mode);
+ * `background` — optional decorative echo behind the objects (always the monochrome background file).
+ */
 export type LayerRole = 'object' | 'background';
+
+/** Source palettes of the Figma file. Objects are drawn in `lavender`; each plane in its own palette. */
+export const SOURCE_PALETTE_IDS = ['lavender', 'peach', 'mint'] as const;
+export type SourcePaletteId = (typeof SOURCE_PALETTE_IDS)[number];
 
 export interface Box {
   x: number;
@@ -55,9 +64,23 @@ export interface AssetFileMeta {
   warnings: string[];
 }
 
+/** A decorative background plane `plane-<palette>-<s|l>.svg` (full-bleed square, cover-fitted). */
+export interface PlaneFileMeta {
+  file: string;
+  /** Palette the plane is drawn in (its colours are mapped from this source palette). */
+  palette: SourcePaletteId;
+  detail: Detail;
+  viewBox: Box;
+  bounds: Box;
+  colors: string[];
+  bytes: number;
+  warnings: string[];
+}
+
 export interface AssetManifest {
   files: AssetFileMeta[];
-  /** Files in public/assets that do not follow `<id>-<s|l>-<main|background>.svg` or failed analysis. */
+  planes: PlaneFileMeta[];
+  /** Files in public/assets that match neither pattern or failed analysis (non-SVG files are skipped silently). */
   ignored: { file: string; reason: string }[];
 }
 
@@ -65,37 +88,42 @@ export interface AssetManifest {
 /* Palette                                                             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Paint roles mirror the Figma swatches: four «background» swatches (tint → ink) and four
+ * «objects» swatches (highlight, accent, accentSoft, light), plus the artboard paper.
+ */
 export const PAINT_ROLES = [
   'paper',
+  'tint',
+  'tone',
+  'deep',
   'ink',
-  'primary',
-  'primarySoft',
-  'secondary',
-  'secondarySoft',
   'highlight',
-  'backdrop',
-  'backdropSoft',
+  'accent',
+  'accentSoft',
+  'light',
 ] as const;
 export type PaintRole = (typeof PAINT_ROLES)[number];
 
+/** `color` — objects use the main (coloured) files; `mono` — objects use the monochrome background files. */
 export type ColorMode = 'color' | 'mono';
 
 export interface Palette {
   id: string;
   name: string;
-  /** All roles are required, `#rrggbb`. */
+  /** All roles, normalised lowercase `#rrggbb`. */
   colors: Record<PaintRole, string>;
-  /** Optional explicit colours for the monochrome mode; missing roles are derived. */
-  mono?: Partial<Record<PaintRole, string>>;
+  /** Which plane geometry to use as the optional background image. */
+  plane: SourcePaletteId;
   builtIn: boolean;
 }
 
 /**
- * Maps a source paint of a bundled file to an output colour.
- * `sourceVariant` is the variant of the file the colour comes from,
- * `target` is how the layer is painted (a main file can be used as a background plane).
+ * Maps a source paint (normalised `#rrggbb`) of a bundled file to the output colour for the
+ * active palette. `source` is the palette the file was drawn in (objects: `lavender`,
+ * planes: their own). Mapping is direct source-role → target-role, never chained.
  */
-export type ColorResolver = (sourceHex: string, sourceVariant: Variant, target: Variant) => string;
+export type ColorResolver = (sourceHex: string, source: SourcePaletteId) => string;
 
 /* ------------------------------------------------------------------ */
 /* Semantics                                                           */
@@ -228,7 +256,10 @@ export interface DocState {
   layout: LayoutMode;
   colorMode: ColorMode;
   paletteId: string;
-  showBackground: boolean;
+  /** Optional decorative background-variant echoes behind the objects (layers with role `background`). */
+  backgroundObjects: boolean;
+  /** Optional palette plane under everything (`plane-<palette.plane>-<detail>.svg`, cover-fitted). */
+  showPlane: boolean;
   /** Show the headline guide in the preview (never exported). */
   showHeadline: boolean;
   /** Text shown in the headline zone guide. */
@@ -254,7 +285,7 @@ export interface ComposeItem {
 
 export interface ComposeInput {
   items: ComposeItem[];
-  /** Decorative planes (already resolved files), empty when backgrounds are off. */
+  /** Decorative background-variant echoes (already resolved files), empty when background objects are off. */
   backgrounds: ComposeItem[];
   artboard: Size;
   mode: LayoutMode;
@@ -286,5 +317,7 @@ export interface DemoPreset {
   layout: LayoutMode;
   detail: Detail;
   paletteId: string;
-  showBackground: boolean;
+  colorMode: ColorMode;
+  backgroundObjects: boolean;
+  showPlane: boolean;
 }

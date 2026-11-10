@@ -13,7 +13,7 @@ export function formaAssets(): Plugin {
     },
     load(source) {
       if (source !== resolved) return null;
-      return 'export default { files: [], ignored: [] };';
+      return 'export default { files: [], planes: [], ignored: [] };';
     },
   };
 }

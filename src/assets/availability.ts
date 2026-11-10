@@ -1,5 +1,14 @@
 // CONTRACT STUB — owned by the SVG core agent. Signatures are fixed; bodies to be implemented.
-import type { AssetFileMeta, Detail, MotifId, Variant } from '../domain/types';
+import type {
+  AssetFileMeta,
+  ColorMode,
+  Detail,
+  LayerRole,
+  MotifId,
+  PlaneFileMeta,
+  SourcePaletteId,
+  Variant,
+} from '../domain/types';
 
 export interface ParsedAssetName {
   motif: MotifId;
@@ -9,6 +18,11 @@ export interface ParsedAssetName {
 
 /** `book-s-main.svg` → {motif:'book', detail:'s', variant:'main'}; anything else → null. */
 export function parseAssetFileName(_file: string): ParsedAssetName | null {
+  throw new Error('not implemented');
+}
+
+/** `plane-mint-l.svg` → {palette:'mint', detail:'l'}; anything else → null. */
+export function parsePlaneFileName(_file: string): { palette: SourcePaletteId; detail: Detail } | null {
   throw new Error('not implemented');
 }
 
@@ -29,6 +43,20 @@ export function resolveAsset(
   _detail: Detail,
   _variant: Variant,
 ): ResolvedAsset | null {
+  throw new Error('not implemented');
+}
+
+/** Variant a layer is drawn with: background echoes → `background`; objects → `main`, or `background` in mono mode. */
+export function variantForLayer(_role: LayerRole, _colorMode: ColorMode): Variant {
+  throw new Error('not implemented');
+}
+
+/** Plane for a palette: exact palette+detail → same palette other detail → `lavender` same/other detail → any. */
+export function resolvePlane(
+  _planes: readonly PlaneFileMeta[],
+  _palette: SourcePaletteId,
+  _detail: Detail,
+): { meta: PlaneFileMeta; exact: boolean } | null {
   throw new Error('not implemented');
 }
 

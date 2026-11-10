@@ -1,26 +1,27 @@
 // CONTRACT STUB — owned by the palette agent. Signatures are fixed; bodies/values to be implemented.
-import type { PaintRole, Variant } from '../domain/types';
+import type { PaintRole, SourcePaletteId } from '../domain/types';
 
 export interface RoleInfo {
-  /** Russian short label, e.g. «Основной». */
+  /** Russian short label, e.g. «Акцент». */
   label: string;
   /** Russian description of where the role is used. */
   description: string;
-  /** Which source drawings use it. */
-  group: 'artboard' | 'main' | 'background';
+  group: 'artboard' | 'background' | 'objects';
 }
 
 export const ROLE_INFO: Record<PaintRole, RoleInfo> = {} as Record<PaintRole, RoleInfo>;
 
-/** Roles that main-variant source colours are classified into. */
-export const MAIN_ROLES: readonly PaintRole[] = [];
-/** Roles that background-variant source colours are classified into. */
-export const BACKDROP_ROLES: readonly PaintRole[] = [];
+/**
+ * Exact swatches of the three Figma palettes (public/assets/source-manifest.json), per role.
+ * `paper` is not a Figma swatch: it is the artboard colour when the plane is off.
+ */
+export const SOURCE_PALETTES: Record<SourcePaletteId, { name: string; colors: Record<PaintRole, string> }> =
+  {} as Record<SourcePaletteId, { name: string; colors: Record<PaintRole, string> }>;
 
-/** Reference colours of the original Figma drawings per role (default palette == these, so it renders 1:1). */
-export const SOURCE_REFERENCE: Record<PaintRole, string> = {} as Record<PaintRole, string>;
-
-/** Nearest role (OKLab distance) for a source colour within the role set of the given variant. */
-export function classifyColor(_hex: string, _sourceVariant: Variant): PaintRole {
+/**
+ * Role of a source colour in its source palette: exact swatch match first, otherwise nearest
+ * swatch in OKLab (paper excluded). Returns the role and the reference swatch it was matched to.
+ */
+export function classifyColor(_hex: string, _source: SourcePaletteId): { role: PaintRole; reference: string; exact: boolean } {
   throw new Error('not implemented');
 }

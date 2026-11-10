@@ -20,7 +20,19 @@ export interface EditorState {
 
 export type LayerPatch = Partial<Pick<Layer, 'x' | 'y' | 'rotation' | 'size' | 'hidden'>>;
 export type DocSettingsPatch = Partial<
-  Pick<DocState, 'preset' | 'detail' | 'layout' | 'colorMode' | 'paletteId' | 'showBackground' | 'showHeadline' | 'headline' | 'brief'>
+  Pick<
+    DocState,
+    | 'preset'
+    | 'detail'
+    | 'layout'
+    | 'colorMode'
+    | 'paletteId'
+    | 'backgroundObjects'
+    | 'showPlane'
+    | 'showHeadline'
+    | 'headline'
+    | 'brief'
+  >
 >;
 
 export type EditorAction =
