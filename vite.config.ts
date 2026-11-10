@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-import { formaAssets } from './tools/vite-plugin-forma-assets';
+import { formaAssets } from './tools/vite-plugin-forma-assets.ts';
 
 export default defineConfig({
   // Relative base so the built `dist/` works from any static path.
