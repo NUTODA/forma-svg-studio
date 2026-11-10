@@ -208,6 +208,8 @@ export function onSurface(dims: readonly Dim[], surface: number): Arrangement | 
   const others = dims.filter((d) => d.index !== surface);
   // Only objects clearly smaller than the surface can lie on it.
   if (others.some((d) => d.aw > 0.75 * base.aw || d.ah > 0.9 * base.ah)) return null;
+  // …and small enough to lie on it without hanging off: a phone or a puzzle on a book, not headphones.
+  if (others.some((d) => d.aw * d.ah > MAX_RESTING_SHARE * base.aw * base.ah)) return null;
   const spots: readonly (readonly [number, number])[] =
     others.length === 1 ? [[-0.08, -0.06]] : [[-0.2, -0.12], [0.16, 0.1]];
   const slots: Slot[] = [{ index: surface, cx: 0, cy: 0 }];
@@ -217,6 +219,9 @@ export function onSurface(dims: readonly Dim[], surface: number): Arrangement | 
   });
   return { kind: 'surface', tiers: 2, slots };
 }
+
+/** An object resting on a surface covers at most this share of its bounding box. */
+const MAX_RESTING_SHARE = 0.33;
 
 /** Screen directions of the isometric floor axes (30° below the horizontal). */
 const DOWN_LEFT = { x: -Math.cos(Math.PI / 6), y: Math.sin(Math.PI / 6) };

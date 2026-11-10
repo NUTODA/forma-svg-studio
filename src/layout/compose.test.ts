@@ -196,6 +196,14 @@ describe('compose: the reference look', () => {
     }
   });
 
+  it('does not rest an object too big for the surface on it (headphones next to a book, not on it)', () => {
+    const inp = input('square', 'composed', ['book', 'headphones']);
+    const [a, b] = objectsOf(compose(inp).layers).map((l) => boxOf(inp, l)) as [Box, Box];
+    const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+    const h = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+    expect(w > 0 && h > 0 ? (w * h) / Math.min(a.width * a.height, b.width * b.height) : 0).toBeLessThan(0.15);
+  });
+
   it('puts the largest object at the back and steps the others towards the viewer', () => {
     const inp = input('square', 'composed', ['folder', 'wallet', 'coin']);
     const layers = objectsOf(compose(inp).layers);
