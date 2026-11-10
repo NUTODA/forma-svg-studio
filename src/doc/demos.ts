@@ -39,6 +39,7 @@ export const DEMO_PRESETS: readonly DemoPreset[] = [
     paletteId: 'mint',
     colorMode: 'color',
     backgroundObjects: false,
-    showPlane: false,
+    // Each demo shows its own palette plane: lavender, peach, mint.
+    showPlane: true,
   },
 ];

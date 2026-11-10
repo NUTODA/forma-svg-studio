@@ -224,7 +224,7 @@ describe('DEMO_PRESETS', () => {
       detail: 's',
       paletteId: 'mint',
       backgroundObjects: false,
-      showPlane: false,
+      showPlane: true,
       brief: { mode: 'names', text: 'книга, наушники, лампа, ручка' },
     });
     expect(spring?.label.replace(/ /g, ' ')).toBe('Букет к 8 Марта');

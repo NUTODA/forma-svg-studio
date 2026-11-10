@@ -52,21 +52,21 @@ describe('artboard presets and zones', () => {
     expect(z.orientation).toBe('horizontal');
   });
 
-  it('offset: anchored bottom-right with a bleed past the edge', () => {
+  it('offset: anchored to the far corner at half margin, open space opposite', () => {
     const og = getZones({ width: 1200, height: 630 }, 'offset').artZone;
     expect(og.x).toBeCloseTo(480);
     expect(og.y).toBe(47);
-    // bleed = round(3.5 % of the short side)
-    expect(boxRight(og)).toBe(1200 + 22);
-    expect(boxBottom(og)).toBe(630 + 22);
+    // edge = round(margin / 2)
+    expect(boxRight(og)).toBe(1200 - 24);
+    expect(boxBottom(og)).toBe(630 - 24);
     const portrait = getZones({ width: 1080, height: 1350 }, 'offset').artZone;
     expect(portrait.x).toBe(81);
     expect(portrait.y).toBeCloseTo(486);
-    expect(boxRight(portrait)).toBe(1080 + 38);
+    expect(boxRight(portrait)).toBe(1080 - 41);
     const square = getZones({ width: 1080, height: 1080 }, 'offset').artZone;
     expect(square.x).toBeCloseTo(324);
     expect(square.y).toBeCloseTo(324);
-    expect(boxBottom(square)).toBe(1080 + 38);
+    expect(boxBottom(square)).toBe(1080 - 41);
   });
 
   it('title: horizontal reserves the left part for the headline', () => {
@@ -147,14 +147,13 @@ describe('compose guarantees', () => {
           const boxOf = (l: PlacedLayer): ReturnType<typeof layerBounds> =>
             layerBounds(l, ((l.role === 'object' ? inp.items : inp.backgrounds)[l.rank] as ComposeItem).meta);
 
-          if (mode !== 'offset') {
-            for (const l of objects) {
-              const b = boxOf(l);
-              expect(b.x).toBeGreaterThanOrEqual(-1);
-              expect(b.y).toBeGreaterThanOrEqual(-1);
-              expect(boxRight(b)).toBeLessThanOrEqual(board.width + 1);
-              expect(boxBottom(b)).toBeLessThanOrEqual(board.height + 1);
-            }
+          // Real drawings are never cropped by the frame, in any layout.
+          for (const l of objects) {
+            const b = boxOf(l);
+            expect(b.x).toBeGreaterThanOrEqual(-1);
+            expect(b.y).toBeGreaterThanOrEqual(-1);
+            expect(boxRight(b)).toBeLessThanOrEqual(board.width + 1);
+            expect(boxBottom(b)).toBeLessThanOrEqual(board.height + 1);
           }
           if (mode === 'title') {
             const headline = result.headlineZone;

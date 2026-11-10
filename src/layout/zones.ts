@@ -29,12 +29,14 @@ export function getZones(artboard: Size, mode: LayoutMode): Zones {
   const m = Math.round(0.075 * Math.min(w, h));
 
   if (mode === 'offset') {
-    const bleed = Math.round(0.035 * Math.min(w, h));
+    // Asymmetric: the group hugs the far corner (half margin) and leaves open space opposite.
+    // Objects stay whole — cropping real drawings at the frame edge reads as a mistake.
+    const edge = Math.round(m / 2);
     const x0 = orientation === 'horizontal' ? 0.4 * w : orientation === 'vertical' ? m : 0.3 * w;
     const y0 = orientation === 'horizontal' ? m : orientation === 'vertical' ? 0.36 * h : 0.3 * h;
     return {
       orientation,
-      artZone: { x: x0, y: y0, width: w + bleed - x0, height: h + bleed - y0 },
+      artZone: { x: x0, y: y0, width: w - edge - x0, height: h - edge - y0 },
       headlineZone: null,
     };
   }
