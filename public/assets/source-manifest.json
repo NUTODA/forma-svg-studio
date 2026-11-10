@@ -1,0 +1,433 @@
+{
+  "source": "https://www.figma.com/design/4MCFttsSoP7hgQh29zq5G3/?node-id=0-1",
+  "objects": {
+    "book": {
+      "name": "Книга",
+      "variants": {
+        "l-main": {
+          "file": "book-l-main.svg",
+          "node": "21:29965",
+          "viewBox": "0 0 1446 977",
+          "width": 1445.892578125,
+          "height": 976.664306640625
+        },
+        "l-background": {
+          "file": "book-l-background.svg",
+          "node": "24:6273",
+          "viewBox": "0 0 1446 977",
+          "width": 1445.892578125,
+          "height": 976.664306640625
+        },
+        "s-main": {
+          "file": "book-s-main.svg",
+          "node": "24:3810",
+          "viewBox": "0 0 723 489",
+          "width": 722.9462890625,
+          "height": 488.3321228027344
+        },
+        "s-background": {
+          "file": "book-s-background.svg",
+          "node": "24:6934",
+          "viewBox": "0 0 723 489",
+          "width": 722.9462890625,
+          "height": 488.3321228027344
+        }
+      }
+    },
+    "phone": {
+      "name": "Телефон",
+      "variants": {
+        "l-main": {
+          "file": "phone-l-main.svg",
+          "node": "21:25472",
+          "viewBox": "0 0 797 462",
+          "width": 796.5315551757812,
+          "height": 461.6672058105469
+        },
+        "l-background": {
+          "file": "phone-l-background.svg",
+          "node": "24:6327",
+          "viewBox": "0 0 797 462",
+          "width": 796.5315551757812,
+          "height": 461.667236328125
+        },
+        "s-main": {
+          "file": "phone-s-main.svg",
+          "node": "24:4746",
+          "viewBox": "0 0 399 231",
+          "width": 398.2657470703125,
+          "height": 230.83363342285156
+        },
+        "s-background": {
+          "file": "phone-s-background.svg",
+          "node": "24:6990",
+          "viewBox": "0 0 399 231",
+          "width": 398.2657470703125,
+          "height": 230.83363342285156
+        }
+      }
+    },
+    "puzzle": {
+      "name": "Пазлы",
+      "variants": {
+        "l-main": {
+          "file": "puzzle-l-main.svg",
+          "node": "21:417",
+          "viewBox": "0 0 545 314",
+          "width": 544.1632080078125,
+          "height": 313.5343322753906
+        },
+        "l-background": {
+          "file": "puzzle-l-background.svg",
+          "node": "24:6214",
+          "viewBox": "0 0 545 314",
+          "width": 544.1632080078125,
+          "height": 313.5343322753906
+        },
+        "s-main": {
+          "file": "puzzle-s-main.svg",
+          "node": "24:4903",
+          "viewBox": "0 0 273 157",
+          "width": 272.08160400390625,
+          "height": 156.7671661376953
+        },
+        "s-background": {
+          "file": "puzzle-s-background.svg",
+          "node": "24:7147",
+          "viewBox": "0 0 273 157",
+          "width": 272.08160400390625,
+          "height": 156.7671661376953
+        }
+      }
+    },
+    "coin": {
+      "name": "Монета",
+      "variants": {
+        "l-main": {
+          "file": "coin-l-main.svg",
+          "node": "24:2207",
+          "viewBox": "0 0 287 189",
+          "width": 286.6766662597656,
+          "height": 188.5005645751953
+        },
+        "l-background": {
+          "file": "coin-l-background.svg",
+          "node": "24:6795",
+          "viewBox": "0 0 287 189",
+          "width": 286.6768798828125,
+          "height": 188.50100708007812
+        },
+        "s-main": {
+          "file": "coin-s-main.svg",
+          "node": "24:5345",
+          "viewBox": "0 0 153 101",
+          "width": 152.39012145996094,
+          "height": 100.20225524902344
+        },
+        "s-background": {
+          "file": "coin-s-background.svg",
+          "node": "24:7205",
+          "viewBox": "0 0 153 101",
+          "width": 152.3905029296875,
+          "height": 100.20217895507812
+        }
+      }
+    },
+    "headphones": {
+      "name": "Наушники",
+      "variants": {
+        "l-main": {
+          "file": "headphones-l-main.svg",
+          "node": "23:122",
+          "viewBox": "0 0 889 692",
+          "width": 888.14990234375,
+          "height": 691.54150390625
+        },
+        "l-background": {
+          "file": "headphones-l-background.svg",
+          "node": "24:6484",
+          "viewBox": "0 0 889 692",
+          "width": 888.14990234375,
+          "height": 691.54150390625
+        },
+        "s-main": {
+          "file": "headphones-s-main.svg",
+          "node": "24:5089",
+          "viewBox": "0 0 445 346",
+          "width": 444.074951171875,
+          "height": 345.770751953125
+        },
+        "s-background": {
+          "file": "headphones-s-background.svg",
+          "node": "24:7344",
+          "viewBox": "0 0 445 346",
+          "width": 444.074951171875,
+          "height": 345.770751953125
+        }
+      }
+    },
+    "lamp": {
+      "name": "Лампа",
+      "variants": {
+        "l-main": {
+          "file": "lamp-l-main.svg",
+          "node": "23:121",
+          "viewBox": "0 0 946 1129",
+          "width": 945.9432373046875,
+          "height": 1128.9852294921875
+        },
+        "l-background": {
+          "file": "lamp-l-background.svg",
+          "node": "24:6569",
+          "viewBox": "0 0 946 1129",
+          "width": 945.9432373046875,
+          "height": 1128.9852294921875
+        },
+        "s-main": {
+          "file": "lamp-s-main.svg",
+          "node": "24:5485",
+          "viewBox": "0 0 473 565",
+          "width": 472.9715881347656,
+          "height": 564.4925537109375
+        },
+        "s-background": {
+          "file": "lamp-s-background.svg",
+          "node": "24:7429",
+          "viewBox": "0 0 473 565",
+          "width": 472.9715881347656,
+          "height": 564.4925537109375
+        }
+      }
+    },
+    "bouquet": {
+      "name": "Букет",
+      "variants": {
+        "l-main": {
+          "file": "bouquet-l-main.svg",
+          "node": "28:11628",
+          "viewBox": "0 0 591 748",
+          "width": 590.5732421875,
+          "height": 747.1065063476562
+        },
+        "l-background": {
+          "file": "bouquet-l-background.svg",
+          "node": "30:11902",
+          "viewBox": "0 0 591 748",
+          "width": 590.5732421875,
+          "height": 747.10595703125
+        },
+        "s-main": {
+          "file": "bouquet-s-main.svg",
+          "node": "28:11629",
+          "viewBox": "0 0 324 409",
+          "width": 323.2647399902344,
+          "height": 408.94677734375
+        },
+        "s-background": {
+          "file": "bouquet-s-background.svg",
+          "node": "28:11766",
+          "viewBox": "0 0 324 409",
+          "width": 323.2647399902344,
+          "height": 408.94677734375
+        }
+      }
+    },
+    "wallet": {
+      "name": "Кошелёк",
+      "variants": {
+        "l-main": {
+          "file": "wallet-l-main.svg",
+          "node": "23:211",
+          "viewBox": "0 0 631 397",
+          "width": 630.41552734375,
+          "height": 396.309814453125
+        },
+        "l-background": {
+          "file": "wallet-l-background.svg",
+          "node": "24:6660",
+          "viewBox": "0 0 631 397",
+          "width": 630.41552734375,
+          "height": 396.309814453125
+        },
+        "s-main": {
+          "file": "wallet-s-main.svg",
+          "node": "24:4594",
+          "viewBox": "0 0 316 199",
+          "width": 315.207763671875,
+          "height": 198.1549835205078
+        },
+        "s-background": {
+          "file": "wallet-s-background.svg",
+          "node": "24:7568",
+          "viewBox": "0 0 316 199",
+          "width": 315.207763671875,
+          "height": 198.1549835205078
+        }
+      }
+    },
+    "folder": {
+      "name": "Папка",
+      "variants": {
+        "l-main": {
+          "file": "folder-l-main.svg",
+          "node": "24:1899",
+          "viewBox": "0 0 1241 659",
+          "width": 1240.61865234375,
+          "height": 658.5882568359375
+        },
+        "l-background": {
+          "file": "folder-l-background.svg",
+          "node": "24:6772",
+          "viewBox": "0 0 1241 659",
+          "width": 1240.61865234375,
+          "height": 658.5882568359375
+        },
+        "s-main": {
+          "file": "folder-s-main.svg",
+          "node": "24:4430",
+          "viewBox": "0 0 621 330",
+          "width": 620.3094482421875,
+          "height": 329.29412841796875
+        },
+        "s-background": {
+          "file": "folder-s-background.svg",
+          "node": "24:7520",
+          "viewBox": "0 0 621 330",
+          "width": 620.3094482421875,
+          "height": 329.29412841796875
+        }
+      }
+    },
+    "pen": {
+      "name": "Ручка",
+      "variants": {
+        "l-main": {
+          "file": "pen-l-main.svg",
+          "node": "24:1734",
+          "viewBox": "0 0 509 286",
+          "width": 508.42822265625,
+          "height": 285.4002380371094
+        },
+        "l-background": {
+          "file": "pen-l-background.svg",
+          "node": "24:6747",
+          "viewBox": "0 0 509 286",
+          "width": 508.42822265625,
+          "height": 285.4002380371094
+        },
+        "s-main": {
+          "file": "pen-s-main.svg",
+          "node": "24:4287",
+          "viewBox": "0 0 255 143",
+          "width": 254.214111328125,
+          "height": 142.7001190185547
+        },
+        "s-background": {
+          "file": "pen-s-background.svg",
+          "node": "24:7543",
+          "viewBox": "0 0 255 143",
+          "width": 254.214111328125,
+          "height": 142.7001190185547
+        }
+      }
+    }
+  },
+  "palettes": {
+    "lavender": {
+      "name": "Сирень",
+      "sourceSwatches": "21:29569",
+      "background": [
+        "#D7CDF5",
+        "#AA9BF0",
+        "#7864D7",
+        "#181817"
+      ],
+      "objects": [
+        "#F9ECB0",
+        "#F9A3AA",
+        "#FFE3E1",
+        "#FFFFFF"
+      ],
+      "planes": {
+        "l": {
+          "file": "plane-lavender-l.svg",
+          "node": "21:25258",
+          "viewBox": "0 0 1000 1000",
+          "width": 1000,
+          "height": 1000
+        },
+        "s": {
+          "file": "plane-lavender-s.svg",
+          "node": "24:5990",
+          "viewBox": "0 0 500 500",
+          "width": 500,
+          "height": 500
+        }
+      }
+    },
+    "peach": {
+      "name": "Персик",
+      "sourceSwatches": "21:29570",
+      "background": [
+        "#FDD7B9",
+        "#FAC896",
+        "#D27532",
+        "#181817"
+      ],
+      "objects": [
+        "#F9ECB0",
+        "#80DADA",
+        "#BEEBEB",
+        "#FFFFFF"
+      ],
+      "planes": {
+        "l": {
+          "file": "plane-peach-l.svg",
+          "node": "21:25399",
+          "viewBox": "0 0 1000 1000",
+          "width": 1000,
+          "height": 1000
+        },
+        "s": {
+          "file": "plane-peach-s.svg",
+          "node": "24:6120",
+          "viewBox": "0 0 500 500",
+          "width": 500,
+          "height": 500
+        }
+      }
+    },
+    "mint": {
+      "name": "Мята",
+      "sourceSwatches": "21:29579",
+      "background": [
+        "#BEEBEB",
+        "#80DADA",
+        "#5ABEBE",
+        "#181817"
+      ],
+      "objects": [
+        "#FFD4F2",
+        "#6D7BFC",
+        "#B6C6FE",
+        "#FFFFFF"
+      ],
+      "planes": {
+        "l": {
+          "file": "plane-mint-l.svg",
+          "node": "21:29593",
+          "viewBox": "0 0 1000 1000",
+          "width": 1000,
+          "height": 1000
+        },
+        "s": {
+          "file": "plane-mint-s.svg",
+          "node": "24:6055",
+          "viewBox": "0 0 500 500",
+          "width": 500,
+          "height": 500
+        }
+      }
+    }
+  }
+}
