@@ -139,7 +139,7 @@ describe('LayersPanel logic', () => {
   });
 
   it('names echo rows, picks the next selection and the roving tab stop', () => {
-    expect(layerRowName('Букет', 'background')).toBe('Букет · эхо');
+    expect(layerRowName('Букет', 'background')).toBe('Букет · фон');
     expect(layerRowName('Букет', 'object')).toBe('Букет');
     const order = displayOrder(layers);
     expect(neighbourAfterRemove(order, 0)).toBe('b');
@@ -270,7 +270,7 @@ describe('Inspector render', () => {
     const layers = [layer('a', 'bouquet', { role: 'background' }), layer('b', 'book')];
     const html = render(fakeApi({ layers, selectedId: 'a' }), Inspector);
     expect(html).toContain('Букет');
-    expect(html).toContain('>Эхо<');
+    expect(html).toContain('>Фон<');
     expect(html).toContain('bouquet-l-main.svg');
     expect(html).toContain('замена');
     expect(html).toContain('Нет точного файла — показан ближайший: bouquet-l-main.svg');
@@ -296,7 +296,7 @@ describe('LayersPanel render', () => {
   it('lists layers top-first with a single roving tab stop and the selected row marked', () => {
     const layers = [layer('a', 'coin'), layer('b', 'book'), layer('c', 'bouquet', { role: 'background', hidden: true })];
     const html = render(fakeApi({ layers, selectedId: 'b' }), LayersPanel);
-    expect(html.indexOf('Букет · эхо')).toBeLessThan(html.indexOf('Книга'));
+    expect(html.indexOf('Букет · фон')).toBeLessThan(html.indexOf('Книга'));
     expect(html.indexOf('Книга')).toBeLessThan(html.indexOf('Монета'));
     expect(html.match(/aria-current="true"/g)).toHaveLength(1);
     expect(html.match(/class="layers__main" tabindex="0"/g)).toHaveLength(1);

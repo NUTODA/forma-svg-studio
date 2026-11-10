@@ -222,7 +222,8 @@ export interface NamesParse {
 /* Layout & document                                                   */
 /* ------------------------------------------------------------------ */
 
-export type LayoutMode = 'composed' | 'offset' | 'title';
+/** `composed` — illustration filling the frame (reference look); `title` — same, leaving room for a headline. */
+export type LayoutMode = 'composed' | 'title';
 export type ArtboardPresetId = 'square' | 'portrait' | 'og';
 export type Orientation = 'horizontal' | 'vertical' | 'square';
 
@@ -290,7 +291,7 @@ export interface ComposeItem {
 
 export interface ComposeInput {
   items: ComposeItem[];
-  /** Decorative background-variant echoes (already resolved files), empty when background objects are off. */
+  /** Background-variant scenery objects (other motifs, already resolved files), empty when they are off. */
   backgrounds: ComposeItem[];
   artboard: Size;
   mode: LayoutMode;

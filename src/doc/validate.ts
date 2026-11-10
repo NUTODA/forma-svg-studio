@@ -20,7 +20,7 @@ const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor',
 
 const PRESETS: readonly ArtboardPresetId[] = ['square', 'portrait', 'og'];
 const DETAILS: readonly Detail[] = ['s', 'l'];
-const LAYOUTS: readonly LayoutMode[] = ['composed', 'offset', 'title'];
+const LAYOUTS: readonly LayoutMode[] = ['composed', 'title'];
 const COLOR_MODES: readonly ColorMode[] = ['color', 'mono'];
 const BRIEF_MODES: readonly BriefMode[] = ['title', 'names'];
 const ROLES: readonly LayerRole[] = ['object', 'background'];
@@ -109,7 +109,9 @@ export function validateDoc(value: unknown): DocState | null {
 
   const preset = oneOf(own(value, 'preset'), PRESETS);
   const detail = oneOf(own(value, 'detail'), DETAILS);
-  const layout = oneOf(own(value, 'layout'), LAYOUTS);
+  // Drafts from before the two layouts were merged may still say 'offset'.
+  const rawLayout = own(value, 'layout');
+  const layout = oneOf(rawLayout === 'offset' ? 'composed' : rawLayout, LAYOUTS);
   const colorMode = oneOf(own(value, 'colorMode'), COLOR_MODES);
   const paletteId = text(own(value, 'paletteId'), MAX_ID_CHARS);
   const headline = text(own(value, 'headline'), MAX_HEADLINE_CHARS);

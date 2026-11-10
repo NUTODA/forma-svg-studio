@@ -55,9 +55,9 @@ export function reorderAnnouncement(name: string, displayIndex: number, count: n
   return `${name} — слой ${displayIndex + 1} из ${count}`;
 }
 
-/** Row text: echoes get an «эхо» suffix. */
+/** Row text: background objects get a «фон» suffix. */
 export function layerRowName(name: string, role: Layer['role']): string {
-  return role === 'background' ? `${name} · эхо` : name;
+  return role === 'background' ? `${name} · фон` : name;
 }
 
 /** Row to select after removing the row at `index` (the one below, else the one above), or null if none left. */

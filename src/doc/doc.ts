@@ -1,5 +1,6 @@
 import { resolveAsset, variantForLayer } from '../assets/availability';
 import type {
+  Box,
   ArtboardPresetId,
   AssetFileMeta,
   ColorMode,
@@ -12,11 +13,10 @@ import type {
   Size,
   Zones,
 } from '../domain/types';
-import { ARTBOARD_PRESETS, compose, getZones, layerBounds, placeEcho } from '../layout/compose';
-import { renderedWidth, visibleFraction } from '../layout/geometry';
+import { ARTBOARD_PRESETS, compose, getZones, layerBounds, placeScenery, sceneryCandidates } from '../layout/compose';
+import { renderedWidth } from '../layout/geometry';
 import { DEFAULT_PALETTE_ID } from '../palette/builtins';
 import { boundLayer, boundPose } from './bounds';
-import type { Pose } from './bounds';
 import { MAX_LAYERS } from './validate';
 
 export { validateDoc } from './validate';
@@ -76,9 +76,26 @@ function artboardOf(preset: ArtboardPresetId): Size {
   return { width: p.width, height: p.height };
 }
 
-/** Echoes are made for the top motif, or the top two when the composition has three or more objects. */
-export function echoCount(objectCount: number): number {
-  return objectCount >= 3 ? 2 : 1;
+/** One background object behind the scene, as in the reference sheets. */
+export const SCENERY_COUNT = 1;
+
+/** Background objects for these visible motifs: other library objects that have a background file. */
+function sceneryItems(
+  visibleMotifs: readonly MotifId[],
+  files: readonly AssetFileMeta[],
+  detail: Detail,
+  colorMode: ColorMode,
+  room: number,
+): ComposeItem[] {
+  if (visibleMotifs.length === 0) return [];
+  const variant = variantForLayer('background', colorMode);
+  const out: ComposeItem[] = [];
+  for (const motif of sceneryCandidates(visibleMotifs)) {
+    if (out.length >= Math.min(SCENERY_COUNT, room)) break;
+    const resolved = resolveAsset(files, motif, detail, variant);
+    if (resolved?.exact !== false && resolved) out.push({ motif, meta: resolved.meta });
+  }
+  return out;
 }
 
 interface ComposedPart {
@@ -94,7 +111,6 @@ interface ComposedPart {
 function composeParts(input: ComposeLayersInput): { parts: ComposedPart[]; zones: Zones; missing: MotifId[] } {
   const { files, detail, colorMode } = input;
   const objectVariant = variantForLayer('object', colorMode);
-  const echoVariant = variantForLayer('background', colorMode);
 
   const items: ComposeItem[] = [];
   /** Item index → index in `input.motifs` (motifs without files are skipped). */
@@ -109,24 +125,20 @@ function composeParts(input: ComposeLayersInput): { parts: ComposedPart[]; zones
     } else if (!missing.includes(motif)) missing.push(motif);
   });
 
-  // Echoes follow the visible objects, like `withBackgroundObjects`: nothing is drawn behind a hidden one.
+  // The background object goes with the visible objects only (nothing is drawn for a hidden one).
   const visible: number[] = [];
   items.forEach((_, item) => {
     if (input.hidden?.[sources[item] as number] !== true) visible.push(item);
   });
-  const room = MAX_LAYERS - items.length;
-  const backgrounds: ComposeItem[] = [];
-  const echoTargets: number[] = [];
-  if (input.backgroundObjects) {
-    for (const target of visible.slice(0, echoCount(visible.length))) {
-      if (backgrounds.length >= room) break;
-      const motif = (items[target] as ComposeItem).motif;
-      const resolved = resolveAsset(files, motif, detail, echoVariant);
-      if (!resolved) continue;
-      backgrounds.push({ motif, meta: resolved.meta });
-      echoTargets.push(target);
-    }
-  }
+  const backgrounds = input.backgroundObjects
+    ? sceneryItems(
+        visible.map((item) => (items[item] as ComposeItem).motif),
+        files,
+        detail,
+        colorMode,
+        MAX_LAYERS - items.length,
+      )
+    : [];
 
   const itemOf = new Map(sources.map((source, item) => [source, item]));
   const stacking = input.stacking?.flatMap((motif) => {
@@ -135,10 +147,11 @@ function composeParts(input: ComposeLayersInput): { parts: ComposedPart[]; zones
   });
   const result = compose(
     { items, backgrounds, artboard: artboardOf(input.preset), mode: input.layout },
-    { echoTargets, stacking },
+    { stacking },
   );
   const parts = result.layers.map((placed): ComposedPart => {
-    const item = placed.role === 'object' ? placed.rank : (echoTargets[placed.rank] as number);
+    // A background object belongs to the scene as a whole; it is attributed to the hero.
+    const item = placed.role === 'object' ? placed.rank : (visible[0] ?? 0);
     return {
       layer: boundLayer({
         motif: placed.motif,
@@ -396,49 +409,40 @@ export function docFromMotifs(base: DocState, motifs: MotifId[], files: readonly
   return { ...base, layers: result.layers, nextId: result.nextId };
 }
 
-/** Pull an echo back toward its object until the artboard crops it no more than it crops the object. */
-function keepEchoOnBoard(object: Pose, objectMeta: AssetFileMeta, echoMeta: AssetFileMeta, echo: Pose, board: Size): Pose {
-  const goal = visibleFraction(layerBounds(object, objectMeta), board);
-  for (const t of [1, 0.75, 0.5, 0.25]) {
-    const pose = { ...echo, x: object.x + (echo.x - object.x) * t, y: object.y + (echo.y - object.y) * t };
-    if (visibleFraction(layerBounds(pose, echoMeta), board) >= goal - 1e-9) return pose;
-  }
-  return { ...echo, x: object.x, y: object.y };
-}
-
 /**
- * Toggle the decorative echoes without touching the objects. Off removes every echo layer; on derives
- * echoes from the current top-ranked visible objects (same placement rules as `compose`, kept on the
- * artboard and within the coordinate limits) and inserts them at the bottom of the z-order, as many as
- * the layer limit allows.
+ * Toggle the background object without touching the objects. Off removes every background layer; on adds
+ * one for the visible objects at the scene's common scale, in a free frame corner, at the bottom of the z-order.
  */
 export function withBackgroundObjects(doc: DocState, files: readonly AssetFileMeta[], on: boolean): DocState {
   const objects = doc.layers.filter((l) => l.role === 'object');
   if (!on) return { ...doc, backgroundObjects: false, layers: objects };
 
   const objectVariant = variantForLayer('object', doc.colorMode);
-  const echoVariant = variantForLayer('background', doc.colorMode);
   const board = artboardOf(doc.preset);
   const avoid = doc.layout === 'title' ? getZones(board, doc.layout).headlineZone : null;
-  const room = Math.max(0, MAX_LAYERS - objects.length);
-
   const ranked = objects
     .map((layer, index) => ({ layer, index }))
     .filter(({ layer }) => !layer.hidden)
     .sort((a, b) => a.layer.rank - b.layer.rank || a.index - b.index)
     .map(({ layer }) => layer);
 
-  const echoes: Layer[] = [];
-  let nextId = doc.nextId;
-  for (const object of ranked.slice(0, echoCount(ranked.length))) {
-    if (echoes.length >= room) break;
-    const objectMeta = resolveAsset(files, object.motif, doc.detail, objectVariant);
-    const echoMeta = resolveAsset(files, object.motif, doc.detail, echoVariant);
-    if (!objectMeta || !echoMeta) continue;
-    const placed = placeEcho(object, objectMeta.meta, echoMeta.meta, echoes.length, doc.layout, avoid);
-    const pose = boundPose(keepEchoOnBoard(object, objectMeta.meta, echoMeta.meta, placed, board));
-    echoes.push({ id: `l${nextId}`, motif: object.motif, role: 'background', ...pose, rank: echoes.length });
-    nextId += 1;
+  const boxes: Box[] = [];
+  for (const layer of ranked) {
+    const resolved = resolveAsset(files, layer.motif, doc.detail, objectVariant);
+    if (resolved) boxes.push(layerBounds(layer, resolved.meta));
   }
-  return { ...doc, backgroundObjects: true, layers: [...echoes, ...objects], nextId };
+  const scale = commonScale(doc, files);
+  const items = scale === null ? [] : sceneryItems(ranked.map((l) => l.motif), files, doc.detail, doc.colorMode, MAX_LAYERS - objects.length);
+  const taken = new Set<string>();
+  const scenery: Layer[] = [];
+  let nextId = doc.nextId;
+  items.forEach((item, rank) => {
+    const placed = placeScenery(item.meta, scale as number, boxes, board, avoid, taken);
+    if (!placed) return;
+    taken.add(placed.corner);
+    const pose = boundPose({ x: placed.x, y: placed.y, rotation: 0, size: placed.size });
+    scenery.push({ id: `l${nextId}`, motif: item.motif, role: 'background', ...pose, rank });
+    nextId += 1;
+  });
+  return { ...doc, backgroundObjects: true, layers: [...scenery, ...objects], nextId };
 }

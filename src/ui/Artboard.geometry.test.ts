@@ -52,7 +52,7 @@ describe('copy helpers', () => {
 
   it('builds the layer label', () => {
     expect(layerAriaLabel('Букет', 'object', 3, 4)).toBe('Букет, объект, слой 3 из 4');
-    expect(layerAriaLabel('Книга', 'background', 1, 2)).toContain('эхо');
+    expect(layerAriaLabel('Книга', 'background', 1, 2)).toContain('фон');
   });
 });
 

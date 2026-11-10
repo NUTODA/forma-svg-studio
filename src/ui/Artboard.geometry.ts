@@ -177,7 +177,7 @@ export function headlineFontSize(text: string, zone: Pick<Box, 'width' | 'height
   return round(Math.max(size, HEADLINE_MIN_SIZE), 1);
 }
 
-const ROLE_LABEL: Record<LayerRole, string> = { object: 'объект', background: 'эхо' };
+const ROLE_LABEL: Record<LayerRole, string> = { object: 'объект', background: 'фон' };
 
 /** «Букет, объект, слой 3 из 4». */
 export function layerAriaLabel(name: string, role: LayerRole, position: number, total: number): string {

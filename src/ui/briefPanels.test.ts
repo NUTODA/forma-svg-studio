@@ -67,7 +67,7 @@ const DEMOS: DemoPreset[] = [
     description: 'Названия',
     brief: { mode: 'names', text: 'книга, 2 монеты, лампа' },
     preset: 'square',
-    layout: 'offset',
+    layout: 'composed',
     detail: 's',
     paletteId: 'lavender',
     colorMode: 'mono',

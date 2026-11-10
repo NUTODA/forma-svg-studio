@@ -44,7 +44,7 @@ export interface Slot {
 }
 
 export interface Arrangement {
-  kind: 'row' | 'tiers' | 'column';
+  kind: 'row' | 'tiers' | 'column' | 'surface';
   tiers: number;
   slots: Slot[];
 }
@@ -195,6 +195,26 @@ export function denseArrangements(dims: readonly Dim[]): Arrangement[] {
     result.push(tiered(dims, order, groups, lifts));
   }
   return result;
+}
+
+/**
+ * Smaller objects resting on a flat one (puzzle on a book, phone on a book), spread along the isometric
+ * diagonal over its middle. `surface` is the index of the flat object.
+ */
+export function onSurface(dims: readonly Dim[], surface: number): Arrangement | null {
+  const base = dims[surface];
+  if (!base || dims.length < 2 || dims.length > 3) return null;
+  const others = dims.filter((d) => d.index !== surface);
+  // Only objects clearly smaller than the surface can lie on it.
+  if (others.some((d) => d.aw > 0.75 * base.aw || d.ah > 0.9 * base.ah)) return null;
+  const spots: readonly (readonly [number, number])[] =
+    others.length === 1 ? [[-0.08, -0.06]] : [[-0.2, -0.12], [0.16, 0.1]];
+  const slots: Slot[] = [{ index: surface, cx: 0, cy: 0 }];
+  others.forEach((d, i) => {
+    const [fx, fy] = spots[i] as readonly [number, number];
+    slots.push({ index: d.index, cx: fx * base.aw, cy: fy * base.ah });
+  });
+  return { kind: 'surface', tiers: 2, slots };
 }
 
 /** All candidate arrangements; `allowColumn` adds the staggered column for tall zones. */

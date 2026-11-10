@@ -18,8 +18,7 @@ import { formatCountedList } from '../util/text';
 import type { BriefResult } from './editorContext';
 
 export const LAYOUT_LABELS: Record<LayoutMode, string> = {
-  composed: 'По центру',
-  offset: 'Со смещением',
+  composed: 'Иллюстрация',
   title: 'С заголовком',
 };
 
@@ -32,7 +31,7 @@ export function motifName(id: MotifId): string {
 
 export function layerName(layer: Pick<Layer, 'motif' | 'role'>): string {
   const name = motifName(layer.motif);
-  return layer.role === 'background' ? `${name} · эхо` : name;
+  return layer.role === 'background' ? `${name} · фон` : name;
 }
 
 export interface BriefAnalysis {

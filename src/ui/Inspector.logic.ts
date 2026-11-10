@@ -3,12 +3,11 @@ import type { ColorMode, Detail, LayerRole, LayoutMode } from '../domain/types';
 
 export const ROLE_LABEL: Record<LayerRole, string> = {
   object: 'Объект',
-  background: 'Эхо',
+  background: 'Фон',
 };
 
 export const LAYOUT_LABEL: Record<LayoutMode, string> = {
-  composed: 'По центру',
-  offset: 'Со смещением',
+  composed: 'Иллюстрация',
   title: 'С заголовком',
 };
 

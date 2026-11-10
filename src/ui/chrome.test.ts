@@ -210,7 +210,7 @@ describe('CanvasToolbar', () => {
   it('exposes the toggles and the recompose button by name', () => {
     const html = render(CanvasToolbar, makeApi());
     expect(html).toContain('Плоскость');
-    expect(html).toContain('title="Монохромные копии объектов позади"');
+    expect(html).toContain('title="Фоновый предмет: другой объект библиотеки в контурном варианте за сценой"');
     expect(html).toContain('aria-label="Перекомпоновать"');
     expect(html).toContain(`С${NBSP}заголовком`);
   });

@@ -32,14 +32,14 @@ export const DEMO_PRESETS: readonly DemoPreset[] = [
   {
     id: 'study-kit',
     label: 'Набор для учёбы',
-    description: 'Названия объектов → смещённая компоновка',
+    description: 'Названия объектов → иллюстрация на весь кадр',
     brief: { mode: 'names', text: 'книга, наушники, лампа, ручка' },
     preset: 'square',
-    layout: 'offset',
+    layout: 'composed',
     detail: 's',
     paletteId: 'mint',
     colorMode: 'color',
-    backgroundObjects: false,
+    backgroundObjects: true,
     // Each demo shows its own palette plane: lavender, peach, mint.
     showPlane: true,
   },

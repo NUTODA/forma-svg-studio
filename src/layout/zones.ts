@@ -22,46 +22,34 @@ export function orientationOf(size: Size): Orientation {
   return 'square';
 }
 
-/** Art zone and reserved headline zone for an artboard and layout mode. */
+/**
+ * Art zone and reserved headline zone for an artboard and layout mode.
+ *
+ * The art zone runs to the frame edges on purpose: like the reference illustrations, the scene is cropped by
+ * the frame (compose() keeps the front objects whole and lets only the back one bleed). In `title` mode the
+ * side facing the headline is a hard edge.
+ */
 export function getZones(artboard: Size, mode: LayoutMode): Zones {
   const { width: w, height: h } = artboard;
   const orientation = orientationOf(artboard);
   const m = Math.round(0.075 * Math.min(w, h));
-
-  if (mode === 'offset') {
-    // Asymmetric: the group hugs the far corner (half margin) and leaves open space opposite.
-    // Objects stay whole — cropping real drawings at the frame edge reads as a mistake.
-    const edge = Math.round(m / 2);
-    const x0 = orientation === 'horizontal' ? 0.4 * w : orientation === 'vertical' ? m : 0.3 * w;
-    const y0 = orientation === 'horizontal' ? m : orientation === 'vertical' ? 0.36 * h : 0.3 * h;
-    return {
-      orientation,
-      artZone: { x: x0, y: y0, width: w - edge - x0, height: h - edge - y0 },
-      headlineZone: null,
-    };
-  }
 
   if (mode === 'title') {
     if (orientation === 'horizontal') {
       return {
         orientation,
         headlineZone: { x: m, y: m, width: 0.42 * w - m, height: h - 2 * m },
-        artZone: { x: 0.48 * w, y: m, width: 0.52 * w - m, height: h - 2 * m },
+        artZone: { x: 0.46 * w, y: 0, width: 0.54 * w, height: h },
       };
     }
-    const headlineHeight = (orientation === 'vertical' ? 0.3 : 0.32) * h;
-    const gap = Math.round(0.03 * h);
-    const artTop = m + headlineHeight + gap;
+    const headlineHeight = (orientation === 'vertical' ? 0.28 : 0.3) * h;
+    const artTop = m + headlineHeight + Math.round(0.03 * h);
     return {
       orientation,
       headlineZone: { x: m, y: m, width: w - 2 * m, height: headlineHeight },
-      artZone: { x: m, y: artTop, width: w - 2 * m, height: h - m - artTop },
+      artZone: { x: 0, y: artTop, width: w, height: h - artTop },
     };
   }
 
-  return {
-    orientation,
-    artZone: { x: m, y: m, width: w - 2 * m, height: h - 2 * m },
-    headlineZone: null,
-  };
+  return { orientation, artZone: { x: 0, y: 0, width: w, height: h }, headlineZone: null };
 }

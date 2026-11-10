@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { DocState, Layer, MotifId } from '../domain/types';
+import type { Box, DocState, Layer, MotifId } from '../domain/types';
 import { ARTBOARD_PRESETS, getZones, layerBounds } from '../layout/compose';
-import { visibleFraction } from '../layout/geometry';
+import { boxesIntersect, visibleFraction } from '../layout/geometry';
 import { allFileMetas, metaOf } from '../layout/testMetas';
 import {
   DEMO_PRESETS,
@@ -193,6 +193,11 @@ describe('validateDoc', () => {
     expect(validateDoc(layerInherits)).toBeNull();
   });
 
+  it('opens drafts saved with the retired «Со смещением» layout as «Иллюстрация»', () => {
+    const legacy = { ...createDoc(), layout: 'offset' } as unknown;
+    expect(validateDoc(legacy)?.layout).toBe('composed');
+  });
+
   it('rejects absurd layer counts', () => {
     const layers = Array.from({ length: 501 }, (_, i) => layer({ id: `l${i + 1}` }));
     expect(validateDoc({ ...createDoc(), layers, nextId: 600 })).toBeNull();
@@ -223,10 +228,10 @@ describe('DEMO_PRESETS', () => {
     });
     expect(study).toMatchObject({
       preset: 'square',
-      layout: 'offset',
+      layout: 'composed',
       detail: 's',
       paletteId: 'mint',
-      backgroundObjects: false,
+      backgroundObjects: true,
       showPlane: true,
       brief: { mode: 'names', text: 'книга, наушники, лампа, ручка' },
     });
@@ -261,12 +266,13 @@ describe('composeLayers', () => {
     expect(r.layers.map((l) => l.motif).sort()).toEqual(['book', 'coin']);
   });
 
-  it('adds echoes for the top motif, or top two with three or more objects', () => {
+  it('adds one background object: another library object suited to the hero, at the bottom', () => {
     const two = composeLayers({ ...base, backgroundObjects: true, motifs: ['book', 'coin'] }, 1);
-    expect(two.layers.filter((l) => l.role === 'background').map((l) => l.motif)).toEqual(['book']);
+    expect(two.layers.filter((l) => l.role === 'background').map((l) => l.motif)).toEqual(['lamp']);
     const three = composeLayers({ ...base, backgroundObjects: true, motifs: ['book', 'coin', 'lamp'] }, 1);
-    expect(three.layers.filter((l) => l.role === 'background').map((l) => l.motif)).toEqual(['book', 'coin']);
-    expect(three.layers.slice(0, 2).every((l) => l.role === 'background')).toBe(true);
+    // The lamp is already in the scene, so the next choice for a book is the bouquet.
+    expect(three.layers.filter((l) => l.role === 'background').map((l) => l.motif)).toEqual(['bouquet']);
+    expect(three.layers[0]?.role).toBe('background');
     const off = composeLayers({ ...base, backgroundObjects: false, motifs: ['book', 'coin', 'lamp'] }, 1);
     expect(off.layers.every((l) => l.role === 'object')).toBe(true);
   });
@@ -313,10 +319,9 @@ describe('objectMotifs / recomposeDoc / docFromMotifs', () => {
     expect(objectMotifs(next)).toEqual(['book', 'coin']);
     expect(next.layers.map((l) => l.id).sort()).toEqual(['l1', 'l2']);
     expect(next.nextId).toBe(3);
-    const art = getZones(ARTBOARD_PRESETS.portrait, 'composed').artZone;
+    // The frame may crop the scene, but every object stays mostly in view.
     for (const l of next.layers) {
-      const b = layerBounds(l, metaOf(l.motif));
-      expect(b.x).toBeGreaterThanOrEqual(art.x - 1);
+      expect(visibleFraction(layerBounds(l, metaOf(l.motif)), ARTBOARD_PRESETS.portrait)).toBeGreaterThan(0.35);
     }
   });
 
@@ -339,7 +344,9 @@ describe('placeNewLayer', () => {
     const spot = placeNewLayer(doc, 'book', FILES);
     const solo = docFromMotifs(doc, ['book'], FILES).layers[0] as Layer;
     expect(spot).toMatchObject({ motif: 'book', role: 'object', rotation: 0, rank: 0 });
-    expect(spot?.size).toBeCloseTo(solo.size);
+    // A lone hero may run off the frame; a catalog drop is capped to fit the art zone.
+    expect(spot?.size).toBeLessThanOrEqual(solo.size + 1e-6);
+    expect(spot?.size).toBeGreaterThan(0.7 * solo.size);
     const zone = getZones(ARTBOARD_PRESETS.og, 'composed').artZone;
     expect(spot?.x).toBeCloseTo(zone.x + zone.width / 2);
     expect(spot?.y).toBeCloseTo(zone.y + zone.height / 2);
@@ -387,56 +394,50 @@ describe('withBackgroundObjects', () => {
   const composed = (n: number, over: Partial<DocState> = {}): DocState =>
     docFromMotifs({ ...createDoc(), ...over }, (['book', 'coin', 'lamp', 'pen'] as MotifId[]).slice(0, n), FILES);
 
-  it('on: derives echoes at the bottom without moving objects', () => {
+  it('on: adds one background object at the bottom without moving objects', () => {
     const doc = composed(3);
     const objects = doc.layers;
     const next = withBackgroundObjects(doc, FILES, true);
     expect(next.backgroundObjects).toBe(true);
     expect(next.layers.filter((l) => l.role === 'object')).toEqual(objects);
-    const echoes = next.layers.filter((l) => l.role === 'background');
-    expect(echoes.map((e) => e.motif)).toEqual(['book', 'coin']);
-    expect(next.layers.slice(0, 2)).toEqual(echoes);
-    expect(echoes.map((e) => e.id)).toEqual(['l4', 'l5']);
-    expect(next.nextId).toBe(6);
+    const scenery = next.layers.filter((l) => l.role === 'background');
+    expect(scenery.map((e) => e.motif)).toEqual(['bouquet']);
+    expect(next.layers[0]).toEqual(scenery[0]);
+    expect(scenery.map((e) => e.id)).toEqual(['l4']);
+    expect(next.nextId).toBe(5);
 
+    // Upright, at the scene's common scale.
+    const bg = scenery[0] as Layer;
     const book = objects.find((l) => l.motif === 'book') as Layer;
-    const echo = echoes[0] as Layer;
-    expect(echo.rotation).toBe(book.rotation);
-    expect(echo.x).toBeGreaterThan(book.x);
-    expect(echo.y).toBeLessThan(book.y);
-    expect(echo.size / metaOf('book', 'l', 'background').bounds.height).toBeCloseTo(book.size / metaOf('book').bounds.height);
+    expect(bg.rotation).toBe(0);
+    expect(bg.size / metaOf('bouquet', 'l', 'background').bounds.height).toBeCloseTo(book.size / metaOf('book').bounds.height, 6);
     expect(validateDoc(next)).not.toBeNull();
   });
 
-  it('on with fewer than three objects: one echo', () => {
+  it('on with fewer objects: still one background object', () => {
     const next = withBackgroundObjects(composed(2), FILES, true);
     expect(next.layers.filter((l) => l.role === 'background')).toHaveLength(1);
   });
 
-  it('uses the same echo placement rules as compose (relative to the object)', () => {
-    const rel = (layers: Layer[]): { motif: string; dx: number; dy: number; scale: number }[] =>
-      layers
-        .filter((l) => l.role === 'background')
-        .map((e) => {
-          const o = layers.find((l) => l.role === 'object' && l.motif === e.motif) as Layer;
-          return { motif: e.motif, dx: (e.x - o.x) / o.size, dy: (e.y - o.y) / o.size, scale: e.size / o.size };
-        });
+  it('places it exactly where a fresh composition would', () => {
+    const pose = (layers: Layer[]): Pick<Layer, 'motif' | 'x' | 'y' | 'size'> => {
+      const { motif, x, y, size } = layers.find((l) => l.role === 'background') as Layer;
+      return { motif, x, y, size };
+    };
     const direct = composeLayers(
       { motifs: ['book', 'coin', 'lamp'], files: FILES, preset: 'og', layout: 'composed', detail: 'l', colorMode: 'color', backgroundObjects: true },
       1,
     );
-    const a = rel(direct.layers);
-    const b = rel(withBackgroundObjects(composed(3), FILES, true).layers);
-    expect(b).toHaveLength(a.length);
-    a.forEach((e, i) => {
-      expect(b[i]?.motif).toBe(e.motif);
-      expect(b[i]?.dx).toBeCloseTo(e.dx, 6);
-      expect(b[i]?.dy).toBeCloseTo(e.dy, 6);
-      expect(b[i]?.scale).toBeCloseTo(e.scale, 6);
-    });
+    const toggled = withBackgroundObjects(composed(3), FILES, true);
+    const a = pose(direct.layers);
+    const b = pose(toggled.layers);
+    expect(b.motif).toBe(a.motif);
+    expect(b.x).toBeCloseTo(a.x, 6);
+    expect(b.y).toBeCloseTo(a.y, 6);
+    expect(b.size).toBeCloseTo(a.size, 6);
   });
 
-  it('off: removes echoes only and keeps objects', () => {
+  it('off: removes background objects only and keeps objects', () => {
     const doc = composed(3, { backgroundObjects: true });
     expect(doc.layers.some((l) => l.role === 'background')).toBe(true);
     const next = withBackgroundObjects(doc, FILES, false);
@@ -444,29 +445,30 @@ describe('withBackgroundObjects', () => {
     expect(next.layers).toEqual(doc.layers.filter((l) => l.role === 'object'));
   });
 
-  it('on replaces existing echoes instead of duplicating them', () => {
+  it('on replaces the existing background object instead of duplicating it', () => {
     const doc = composed(3, { backgroundObjects: true });
     const next = withBackgroundObjects(doc, FILES, true);
-    expect(next.layers.filter((l) => l.role === 'background')).toHaveLength(2);
+    expect(next.layers.filter((l) => l.role === 'background')).toHaveLength(1);
   });
 
-  it('title layout: echoes keep out of the headline zone', () => {
-    const doc = composed(3, { layout: 'title' });
-    const next = withBackgroundObjects(doc, FILES, true);
-    const zones = getZones(ARTBOARD_PRESETS.og, 'title');
-    for (const e of next.layers.filter((l) => l.role === 'background')) {
-      const b = layerBounds(e, metaOf(e.motif, 'l', 'background'));
-      expect(b.x).toBeGreaterThanOrEqual((zones.headlineZone?.x ?? 0) + (zones.headlineZone?.width ?? 0) - 1);
+  it('title layout: the background object keeps out of the headline zone', () => {
+    for (const preset of ['og', 'square', 'portrait'] as const) {
+      const doc = composed(3, { layout: 'title', preset });
+      const next = withBackgroundObjects(doc, FILES, true);
+      const headline = getZones(ARTBOARD_PRESETS[preset], 'title').headlineZone as Box;
+      for (const e of next.layers.filter((l) => l.role === 'background')) {
+        expect(boxesIntersect(layerBounds(e, metaOf(e.motif, 'l', 'background')), headline)).toBe(false);
+      }
     }
   });
 
-  it('follows manually moved objects', () => {
+  it('takes a free corner, away from where the user moved the objects', () => {
     const doc = composed(1);
-    const moved = { ...doc, layers: doc.layers.map((l) => ({ ...l, x: 300, y: 300 })) };
-    const next = withBackgroundObjects(moved, FILES, true);
-    const echo = next.layers.find((l) => l.role === 'background') as Layer;
-    expect(Math.abs(echo.x - 300)).toBeGreaterThan(0);
-    expect(Math.abs(echo.x - 300)).toBeLessThan(120);
+    const board = ARTBOARD_PRESETS.og;
+    // The book is dragged into the top-left corner.
+    const moved = { ...doc, layers: doc.layers.map((l) => ({ ...l, x: 150, y: 100 })) };
+    const bg = withBackgroundObjects(moved, FILES, true).layers.find((l) => l.role === 'background') as Layer;
+    expect(bg.x > board.width / 2 || bg.y > board.height / 2).toBe(true);
   });
 
   it('with no objects only flips the flag', () => {
@@ -506,7 +508,7 @@ describe('recomposeDoc keeps identity, stacking and echoes', () => {
     const patches: Partial<DocState>[] = [
       { preset: 'square' },
       { layout: 'title' },
-      { layout: 'offset', preset: 'portrait' },
+      { layout: 'composed', preset: 'portrait' },
     ];
     for (const patch of patches) {
       const next = recomposeDoc({ ...base, ...patch }, FILES);
@@ -560,47 +562,47 @@ describe('recomposeDoc keeps identity, stacking and echoes', () => {
     }
   });
 
-  it('keeps echoes at the bottom and objects in their stacking order', () => {
+  it('keeps the background object at the bottom and objects in their stacking order', () => {
     const base = composedDoc(['book', 'coin', 'lamp'], { backgroundObjects: true });
-    const echoes = base.layers.filter((l) => l.role === 'background');
+    const scenery = base.layers.filter((l) => l.role === 'background');
     const objects = base.layers.filter((l) => l.role === 'object').reverse();
-    const next = recomposeDoc({ ...base, layers: [...echoes, ...objects], preset: 'portrait' }, FILES);
-    expect(next.layers.slice(0, 2).map((l) => l.id)).toEqual(echoes.map((l) => l.id));
-    expect(next.layers.slice(2).map((l) => l.id)).toEqual(objects.map((l) => l.id));
+    const next = recomposeDoc({ ...base, layers: [...scenery, ...objects], preset: 'portrait' }, FILES);
+    expect(next.layers.slice(0, 1).map((l) => l.id)).toEqual(scenery.map((l) => l.id));
+    expect(next.layers.slice(1).map((l) => l.id)).toEqual(objects.map((l) => l.id));
   });
 
-  it('an echo keeps its id and its hidden flag', () => {
+  it('the background object keeps its id and its hidden flag', () => {
     const base = composedDoc(['book', 'coin', 'lamp'], { backgroundObjects: true });
-    const echoes = base.layers.filter((l) => l.role === 'background');
-    expect(echoes.map((e) => e.motif)).toEqual(['book', 'coin']);
-    const next = recomposeDoc({ ...hide(base, (echoes[1] as Layer).id), layout: 'offset' }, FILES);
+    const [bg] = base.layers.filter((l) => l.role === 'background');
+    expect(bg?.motif).toBe('bouquet');
+    const next = recomposeDoc({ ...hide(base, (bg as Layer).id), layout: 'title' }, FILES);
     const after = next.layers.filter((l) => l.role === 'background');
-    expect(after.map((e) => e.id)).toEqual(echoes.map((e) => e.id));
-    expect(after.map((e) => e.hidden === true)).toEqual([false, true]);
-    expect(next.layers.slice(0, 2)).toEqual(after);
+    expect(after.map((e) => e.id)).toEqual([(bg as Layer).id]);
+    expect(after[0]?.hidden).toBe(true);
+    expect(next.layers[0]).toEqual(after[0]);
     expect(next.nextId).toBe(base.nextId);
   });
 
-  it('never leaves a visible echo behind a hidden object', () => {
-    const base = composedDoc(['book', 'coin', 'lamp'], { backgroundObjects: true });
+  it('chooses the background object for the visible objects only', () => {
+    const base = composedDoc(['wallet', 'coin'], { backgroundObjects: true });
     const hero = base.layers.find((l) => l.role === 'object' && l.rank === 0) as Layer;
+    // Wallet visible → a lamp behind it; the wallet hidden → chosen for the coin (also a lamp), never a wallet.
     const next = recomposeDoc({ ...hide(base, hero.id), preset: 'portrait' }, FILES);
     expect(find(next, hero.id)?.hidden).toBe(true);
-    const shown = new Set(next.layers.filter((l) => l.role === 'object' && !l.hidden).map((l) => l.motif));
-    const echoes = next.layers.filter((l) => l.role === 'background');
-    expect(echoes.length).toBeGreaterThan(0);
-    for (const echo of echoes) expect(shown.has(echo.motif) || echo.hidden === true).toBe(true);
-    expect(echoes.map((e) => e.motif)).not.toContain(hero.motif);
+    const scenery = next.layers.filter((l) => l.role === 'background');
+    expect(scenery).toHaveLength(1);
+    expect(scenery.map((e) => e.motif)).not.toContain('wallet');
+    expect(scenery.map((e) => e.motif)).not.toContain('coin');
   });
 
-  it('echoes that did not exist get fresh unique ids', () => {
+  it('a background object that did not exist gets a fresh unique id', () => {
     const base = composedDoc(['book', 'coin', 'lamp']);
     const next = recomposeDoc({ ...base, backgroundObjects: true }, FILES);
     const ids = next.layers.map((l) => l.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(next.layers).toHaveLength(5);
-    expect(next.layers.filter((l) => l.role === 'background').map((l) => l.id)).toEqual(['l4', 'l5']);
-    expect(next.nextId).toBe(6);
+    expect(next.layers).toHaveLength(4);
+    expect(next.layers.filter((l) => l.role === 'background').map((l) => l.id)).toEqual(['l4']);
+    expect(next.nextId).toBe(5);
     expect(validateDoc(next)).not.toBeNull();
   });
 
@@ -619,7 +621,7 @@ describe('layer limit', () => {
     echoes: doc.layers.filter((l) => l.role === 'background').length,
   });
   const CASES = [
-    { objects: MAX_LAYERS - 2, echoes: 2 },
+    { objects: MAX_LAYERS - 2, echoes: 1 },
     { objects: MAX_LAYERS - 1, echoes: 1 },
     { objects: MAX_LAYERS, echoes: 0 },
   ] as const;
@@ -675,45 +677,14 @@ describe('echo geometry', () => {
     expect(validateDoc(next)).not.toBeNull();
   });
 
-  it('is pulled back from the artboard edge instead of being cropped', () => {
+  it('is cropped by a frame corner, never pushed into the middle of the scene', () => {
     const board = ARTBOARD_PRESETS.og;
-    const bookMeta = metaOf('book');
-    const echoMeta = metaOf('book', 'l', 'background');
-    const size = 200;
-    const echoSize = (size / bookMeta.bounds.height) * echoMeta.bounds.height;
-    const objectWidth = layerBounds({ x: 0, y: 0, rotation: 0, size }, bookMeta).width;
-    const echoWidth = layerBounds({ x: 0, y: 0, rotation: 0, size: echoSize }, echoMeta).width;
-    const shift = 0.07 * Math.max(objectWidth, size);
-    // Room for 60 % of the usual shift: the full and the 75 % shift would poke out, 50 % fits.
-    const x = board.width - Math.max(objectWidth, echoWidth) / 2 - 0.6 * shift;
-    const doc = docWith([layer({ x, y: 315, size })]);
-
-    const next = withBackgroundObjects(doc, FILES, true);
-    const echo = next.layers[0] as Layer;
-    expect(echo.role).toBe('background');
-    expect(visibleFraction(layerBounds(echo, echoMeta), board)).toBeCloseTo(1, 6);
-    expect(echo.x - x).toBeGreaterThan(0);
-    expect(echo.x - x).toBeLessThan(shift);
-  });
-
-  it('keeps the usual shift when it only shows more of the echo than of its object', () => {
-    const board = ARTBOARD_PRESETS.og;
-    const size = 200;
-    // The object sits half below the bottom edge; the echo moves up and right, i.e. into the artboard.
-    const doc = docWith([layer({ x: 600, y: board.height, size })]);
-    const echo = withBackgroundObjects(doc, FILES, true).layers[0] as Layer;
-    const shift = 0.07 * Math.max(layerBounds({ x: 0, y: 0, rotation: 0, size }, metaOf('book')).width, size);
-    expect(echo.x - 600).toBeCloseTo(shift, 6);
-    expect(echo.y - board.height).toBeCloseTo(-shift, 6);
-  });
-
-  it('falls back to a concentric echo when every shift would crop it more than the object', () => {
-    const board = ARTBOARD_PRESETS.og;
-    // Half of the object is beyond the right edge and the echo's shift goes further right.
-    const doc = docWith([layer({ x: board.width, y: 315, size: 200 })]);
-    const echo = withBackgroundObjects(doc, FILES, true).layers[0] as Layer;
-    expect(echo.x).toBeCloseTo(board.width, 6);
-    expect(echo.y).toBeCloseTo(315, 6);
+    const doc = docFromMotifs({ ...createDoc(), backgroundObjects: true }, ['wallet', 'coin'], FILES);
+    const bg = doc.layers.find((l) => l.role === 'background') as Layer;
+    const box = layerBounds(bg, metaOf(bg.motif, 'l', 'background'));
+    const share = visibleFraction(box, board);
+    expect(share).toBeGreaterThan(0.1);
+    expect(share).toBeLessThan(1);
   });
 });
 

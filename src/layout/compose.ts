@@ -1,113 +1,72 @@
 import type {
-  AssetFileMeta,
   Box,
   ComposeInput,
   ComposeItem,
   ComposeResult,
-  LayoutMode,
   PlacedLayer,
-  Size,
 } from '../domain/types';
-import { candidateArrangements, denseArrangements, makeDims } from './arrange';
+import { candidateArrangements, denseArrangements, makeDims, onSurface } from './arrange';
 import type { Arrangement, Dim } from './arrange';
-import { placeEcho } from './echoes';
-import { boxBottom, boxRight, layerBounds, uncoveredFraction, unionBox, visibleAxes } from './geometry';
+import { placeScenery } from './scenery';
+import { layerBounds, uncoveredFraction, unionBox } from './geometry';
 import { getZones } from './zones';
 
 export { ARTBOARD_PRESETS, getZones, orientationOf } from './zones';
 export { layerBounds } from './geometry';
-export { echoOffset, placeEcho } from './echoes';
+export { placeScenery, sceneryCandidates } from './scenery';
 
-/** Deterministic tilts for items 1, 2, 3… (the hero is never tilted). */
-const TILTS = [-6, 5, -4, 7, -3, 6, -5] as const;
-const SMALL_TILT_BOOST = 1.3;
-const OFFSET_TILT_BOOST = 1.25;
-const MAX_TILT = 10;
-const SMALL_RATIO = 0.4;
-
-const FILL: Record<LayoutMode, number> = { composed: 0.9, title: 0.94, offset: 0.96 };
-const SINGLE_FILL: Record<LayoutMode, number> = { composed: 0.78, title: 0.78, offset: 0.96 };
-/** Optical correction: group sits slightly above the geometric centre. */
+/**
+ * Scale over «the whole group just fits the art zone». Above 1 the scene is cropped by the frame like the
+ * reference illustrations: strongly when the back object is a flat surface (a book or a folder running off
+ * the frame), below 1 when the scene is compact objects the references show whole with room for the background (a wallet
+ * and a coin, a puzzle and a pen).
+ */
+const BLEED = { single: 1.05, surface: 1.22, group: 0.8 } as const;
+/**
+ * The library is drawn at one physical scale (a book is five coins wide; S files are half the L size), and
+ * the reference sheets show objects close to that native size on a 1080 px frame. A scene is never magnified
+ * past this many rendered pixels per L source unit (scaled with the frame), so a lone coin stays a coin.
+ */
+const MAX_NATIVE_SCALE = 1.3;
+const REFERENCE_FRAME = 1080;
+/** Front objects may be cropped by the frame edges too, but keep at least this share per axis inside. */
+const FRONT_VISIBLE = 0.9;
+/** Gap between front objects and the headline side of the art zone, as a share of the shorter frame side. */
+const FRONT_MARGIN = 0.03;
+/** The back object keeps at least this share of its width and of its height inside the frame. */
+const BACK_VISIBLE = 0.62;
+/** Each retry shrinks the scale by this factor until every object fits its region. */
+const SHRINK = 0.97;
+/** Optical correction: the group sits slightly above the geometric centre. */
 const OPTICAL_LIFT = 0.02;
+/** Flat objects others can rest on (as in the reference sheets). */
+const SURFACES = new Set(['book', 'folder']);
+/** Objects resting on a surface: the reference look, preferred when it reads well. */
+const SURFACE_BONUS = 1.35;
+/** Preference of the diagonal (tiered) arrangements: the reference scenes are built on the isometric diagonal. */
+const DIAGONAL_BONUS = 1.2;
 /** Mild preference of an arrangement kind for a zone shape. */
 const SHAPE_BONUS = 1.08;
-/** Share of an object that must stay on the artboard in the offset layout. */
-const MIN_VISIBLE = 0.8;
 /** The hero keeps at least this share of its bounds uncovered. */
 const HERO_FREE = 0.6;
 /**
- * Every other object should keep this share of its bounds uncovered by objects drawn above it.
- * Candidates below it are penalised steeply, so a slightly smaller but readable arrangement wins
- * over a larger one that buries an object (bounds are conservative: isometric drawings leave
- * empty corners, so 0.55 of the box reads as clearly visible).
+ * Every other object should keep this share of its bounds uncovered by objects drawn above it. Objects may
+ * rest on one another (phone on a book), but none may be buried; bounds are conservative for isometric art.
  */
-const MIN_UNCOVERED = 0.55;
+const MIN_UNCOVERED = 0.5;
 const OCCLUSION_POWER = 3;
 /**
  * Up to this many objects every arrangement is tried and scored against occlusion (the default brief has 1–8).
- * Beyond it the search would grow with n³ candidates × n² overlap samples (seconds for ~100 layers), so a
- * small deterministic family of tiered arrangements is scored by scale alone and the hero is lifted on top.
+ * Beyond it a small deterministic family of tiered arrangements is scored by scale alone.
  */
 const EXHAUSTIVE_MAX_ITEMS = 16;
 
 export interface ComposeOptions {
-  /** Item index each background sits behind (parallel to `backgrounds`); default: first unmatched item of its motif. */
-  echoTargets?: readonly number[];
   /**
    * Preferred z-order of the objects as item indices, bottom first. It replaces the art-directed order (and
    * arrangements are scored against it); items it does not list go on top in index order.
    */
   stacking?: readonly number[];
-}
-
-interface EchoLink {
-  /** Index in `ComposeInput.backgrounds`. */
-  background: number;
-  /** Index of the object it sits behind. */
-  object: number;
-  /** Position among placed echoes (decides the shift direction). */
-  order: number;
-}
-
-function tiltFor(index: number, small: boolean, mode: LayoutMode): number {
-  if (index === 0) return 0;
-  let tilt = TILTS[(index - 1) % TILTS.length] ?? 0;
-  if (small) tilt *= SMALL_TILT_BOOST;
-  if (mode === 'offset') tilt *= OFFSET_TILT_BOOST;
-  return Math.round(Math.max(-MAX_TILT, Math.min(MAX_TILT, tilt)) * 10) / 10;
-}
-
-function rotationsFor(metas: readonly AssetFileMeta[], mode: LayoutMode): number[] {
-  const tallest = Math.max(...metas.map((m) => m.bounds.height));
-  return metas.map((m, i) => tiltFor(i, m.bounds.height < SMALL_RATIO * tallest, mode));
-}
-
-/** Each echo sits behind the first not yet matched object of the same motif. */
-function linkEchoes(items: readonly ComposeItem[], backgrounds: readonly ComposeItem[]): EchoLink[] {
-  const taken = new Set<number>();
-  const links: EchoLink[] = [];
-  backgrounds.forEach((bg, background) => {
-    const object = items.findIndex((it, i) => !taken.has(i) && it.motif === bg.motif);
-    if (object < 0) return;
-    taken.add(object);
-    links.push({ background, object, order: links.length });
-  });
-  return links;
-}
-
-/** Echoes behind explicitly chosen objects; targets outside `items` are skipped. */
-function targetEchoes(
-  items: readonly ComposeItem[],
-  backgrounds: readonly ComposeItem[],
-  targets: readonly number[],
-): EchoLink[] {
-  const links: EchoLink[] = [];
-  backgrounds.forEach((_, background) => {
-    const object = targets[background];
-    if (object === undefined || !Number.isInteger(object) || object < 0 || object >= items.length) return;
-    links.push({ background, object, order: links.length });
-  });
-  return links;
 }
 
 /** Listed indices (valid, first occurrence), then the unlisted ones in index order; null for no preference. */
@@ -126,34 +85,22 @@ function normalizeStacking(stacking: readonly number[] | undefined, count: numbe
 
 type Pose = Pick<PlacedLayer, 'x' | 'y' | 'rotation' | 'size'>;
 
-/** Rotated bounds of every object and echo for objects posed by `poseOf`. */
-function groupBoxes(
-  items: readonly ComposeItem[],
-  backgrounds: readonly ComposeItem[],
-  links: readonly EchoLink[],
-  mode: LayoutMode,
-  poses: readonly Pose[],
-  avoid: Box | null,
-): { objects: Box[]; echoes: Box[] } {
-  const objects = poses.map((pose, i) => layerBounds(pose, (items[i] as ComposeItem).meta));
-  const echoes = links.map((link) => {
-    const bg = backgrounds[link.background] as ComposeItem;
-    const obj = items[link.object] as ComposeItem;
-    const pose = placeEcho(poses[link.object] as Pose, obj.meta, bg.meta, link.order, mode, avoid);
-    return layerBounds(pose, bg.meta);
-  });
-  return { objects, echoes };
-}
-
 interface Candidate {
   arrangement: Arrangement;
+  /** Scale at which the whole group just fits the art zone. */
   scale: number;
-  /** Union of everything at unit scale. */
   union: Box;
-  /** Unit-scale object poses by item index. */
   unit: Pose[];
-  /** Smallest uncovered share of any object under the final z-order (scale-invariant). */
   minUncovered: number;
+}
+
+function unitPoses(arrangement: Arrangement, dims: readonly Dim[]): Pose[] {
+  const poses: Pose[] = [];
+  for (const slot of arrangement.slots) {
+    const d = dims[slot.index] as Dim;
+    poses[slot.index] = { x: slot.cx, y: slot.cy, rotation: 0, size: d.h };
+  }
+  return poses;
 }
 
 /** Smallest share of any object's bounds left uncovered by the objects stacked above it. */
@@ -167,88 +114,48 @@ function minUncoveredShare(dims: readonly Dim[], boxes: readonly Box[], stacking
   return min;
 }
 
-function unitPoses(arrangement: Arrangement, dims: readonly Dim[]): Pose[] {
-  const poses: Pose[] = [];
-  for (const slot of arrangement.slots) {
-    const d = dims[slot.index] as Dim;
-    poses[slot.index] = { x: slot.cx, y: slot.cy, rotation: d.rotation, size: d.h };
-  }
-  return poses;
-}
-
 function evaluate(
   arrangement: Arrangement,
   dims: readonly Dim[],
   items: readonly ComposeItem[],
-  backgrounds: readonly ComposeItem[],
-  links: readonly EchoLink[],
-  mode: LayoutMode,
   zone: Box,
-  fill: number,
   stacking: readonly number[] | null,
-  /** False for big sets: occlusion sampling is quadratic in the object count, so it is skipped. */
   occlusion: boolean,
 ): Candidate {
   const unit = unitPoses(arrangement, dims);
-  const boxes = groupBoxes(items, backgrounds, links, mode, unit, null);
-  const union = unionBox([...boxes.objects, ...boxes.echoes]);
-  const scale = Math.min((fill * zone.width) / union.width, (fill * zone.height) / union.height);
-  const minUncovered = occlusion ? minUncoveredShare(dims, boxes.objects, stacking) : 1;
+  const boxes = unit.map((pose, i) => layerBounds(pose, (items[i] as ComposeItem).meta));
+  const union = unionBox(boxes);
+  const scale = Math.min(zone.width / union.width, zone.height / union.height);
+  const minUncovered = occlusion ? minUncoveredShare(dims, boxes, stacking) : 1;
   return { arrangement, scale, union, unit, minUncovered };
 }
 
-function preference(arrangement: Arrangement, zone: Box): number {
+function preference(arrangement: Arrangement, zone: Box, count: number): number {
   const aspect = zone.width / zone.height;
-  if (arrangement.kind === 'row' && arrangement.tiers === 1 && aspect >= 1.2) return SHAPE_BONUS;
-  if (arrangement.kind === 'tiers' && aspect <= 0.9) return SHAPE_BONUS;
-  return 1;
+  let bonus = 1;
+  if (count >= 2 && arrangement.kind === 'tiers') bonus *= DIAGONAL_BONUS;
+  if (arrangement.kind === 'surface') bonus *= SURFACE_BONUS;
+  if (arrangement.kind === 'row' && aspect >= 1.2) bonus *= SHAPE_BONUS;
+  if (arrangement.kind === 'column' && aspect <= 0.9) bonus *= SHAPE_BONUS;
+  return bonus;
 }
 
-function candidateScore(c: Candidate, zone: Box): number {
+function candidateScore(c: Candidate, zone: Box, count: number): number {
   const legibility = Math.min(1, c.minUncovered / MIN_UNCOVERED) ** OCCLUSION_POWER;
-  return c.scale * preference(c.arrangement, zone) * legibility;
+  return c.scale * preference(c.arrangement, zone, count) * legibility;
 }
 
-function pickCandidate(candidates: readonly Candidate[], zone: Box): Candidate {
+function pickCandidate(candidates: readonly Candidate[], zone: Box, count: number): Candidate {
   let best = candidates[0] as Candidate;
-  let bestScore = candidateScore(best, zone);
+  let bestScore = candidateScore(best, zone, count);
   for (const c of candidates) {
-    const score = candidateScore(c, zone);
+    const score = candidateScore(c, zone, count);
     if (score > bestScore + 1e-9) {
       best = c;
       bestScore = score;
     }
   }
   return best;
-}
-
-/** Group origin so that the scaled union is centred (composed/title) or anchored bottom-right (offset). */
-function placementOffset(c: Candidate, zone: Box, mode: LayoutMode): { x: number; y: number } {
-  const { union, scale } = c;
-  if (mode === 'offset') {
-    return { x: boxRight(zone) - scale * boxRight(union), y: boxBottom(zone) - scale * boxBottom(union) };
-  }
-  const zoneCx = zone.x + zone.width / 2;
-  const zoneCy = zone.y + zone.height / 2 - OPTICAL_LIFT * zone.height;
-  return {
-    x: zoneCx - scale * (union.x + union.width / 2),
-    y: zoneCy - scale * (union.y + union.height / 2),
-  };
-}
-
-/** Offset layout: move the whole group inward just enough that every object stays mostly visible. */
-function keepVisible(poses: Pose[], items: readonly ComposeItem[], artboard: Size): void {
-  const visibility = (): { vx: number; vy: number; total: number }[] =>
-    poses.map((pose, i) => {
-      const { vx, vy } = visibleAxes(layerBounds(pose, (items[i] as ComposeItem).meta), artboard);
-      return { vx, vy, total: vx * vy };
-    });
-  for (let guard = 0; guard < 2000; guard += 1) {
-    const worst = visibility().reduce((a, b) => (b.total < a.total ? b : a));
-    if (worst.total >= MIN_VISIBLE) return;
-    const axis = worst.vx < worst.vy ? 'x' : 'y';
-    for (const pose of poses) pose[axis] -= 1;
-  }
 }
 
 /** Painted area, largest first (back to front); equal areas keep later items behind. */
@@ -281,7 +188,85 @@ function zOrder(dims: readonly Dim[], boxes: readonly Box[], stacking: readonly 
   return order;
 }
 
-/** Deterministic art-directed composition (uniform common scale, source proportions preserved). */
+interface Region {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/**
+ * Where each object may go. On frame edges the back object may be cropped down to BACK_VISIBLE and the front
+ * ones down to FRONT_VISIBLE; the headline side of the art zone is a hard edge for everyone (plus `margin`).
+ */
+function regionFor(box: Box, back: boolean, zone: Box, artboard: { width: number; height: number }, margin: number): Region {
+  const onLeft = zone.x <= 0;
+  const onTop = zone.y <= 0;
+  const onRight = zone.x + zone.width >= artboard.width;
+  const onBottom = zone.y + zone.height >= artboard.height;
+  const keep = back ? BACK_VISIBLE : FRONT_VISIBLE;
+  const bx = (1 - keep) * box.width;
+  const by = (1 - keep) * box.height;
+  return {
+    x0: onLeft ? zone.x - bx : zone.x + margin,
+    y0: onTop ? zone.y - by : zone.y + margin,
+    x1: onRight ? zone.x + zone.width + bx : zone.x + zone.width - margin,
+    y1: onBottom ? zone.y + zone.height + by : zone.y + zone.height - margin,
+  };
+}
+
+/**
+ * Scale the arrangement up past «fits the zone» and translate it so every object stays in its region, the
+ * group as close to the (optically lifted) zone centre as the regions allow. Shrinks until it fits.
+ */
+function fitScene(
+  best: Candidate,
+  items: readonly ComposeItem[],
+  backIndex: number,
+  zone: Box,
+  artboard: { width: number; height: number },
+  bleed: number,
+): Pose[] {
+  const margin = FRONT_MARGIN * Math.min(artboard.width, artboard.height);
+  const unitBoxes = best.unit.map((pose, i) => layerBounds(pose, (items[i] as ComposeItem).meta));
+  const detailFactor = (items[0] as ComposeItem).meta.detail === 's' ? 2 : 1;
+  const nativeCap = (MAX_NATIVE_SCALE * detailFactor * Math.min(artboard.width, artboard.height)) / REFERENCE_FRAME;
+  let scale = Math.min(best.scale * bleed, nativeCap);
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const boxes = unitBoxes.map((b) => ({ x: b.x * scale, y: b.y * scale, width: b.width * scale, height: b.height * scale }));
+    let lx = -Infinity;
+    let hx = Infinity;
+    let ly = -Infinity;
+    let hy = Infinity;
+    boxes.forEach((b, i) => {
+      const r = regionFor(b, i === backIndex, zone, artboard, margin);
+      lx = Math.max(lx, r.x0 - b.x);
+      hx = Math.min(hx, r.x1 - (b.x + b.width));
+      ly = Math.max(ly, r.y0 - b.y);
+      hy = Math.min(hy, r.y1 - (b.y + b.height));
+    });
+    if (lx <= hx + 1e-9 && ly <= hy + 1e-9) {
+      const u = unionBox(boxes);
+      const cx = zone.x + zone.width / 2 - (u.x + u.width / 2);
+      const cy = zone.y + zone.height / 2 - OPTICAL_LIFT * zone.height - (u.y + u.height / 2);
+      const tx = Math.min(hx, Math.max(lx, cx));
+      const ty = Math.min(hy, Math.max(ly, cy));
+      return best.unit.map((p) => ({ x: tx + scale * p.x, y: ty + scale * p.y, rotation: 0, size: scale * p.size }));
+    }
+    scale *= SHRINK;
+  }
+  // Degenerate input (an object larger than the zone at any sensible scale): centre what we have.
+  const u = unionBox(unitBoxes.map((b) => ({ x: b.x * scale, y: b.y * scale, width: b.width * scale, height: b.height * scale })));
+  const tx = zone.x + zone.width / 2 - (u.x + u.width / 2);
+  const ty = zone.y + zone.height / 2 - (u.y + u.height / 2);
+  return best.unit.map((p) => ({ x: tx + scale * p.x, y: ty + scale * p.y, rotation: 0, size: scale * p.size }));
+}
+
+/**
+ * Deterministic composition modelled on the reference sheets: upright objects (rotation would break the
+ * isometric grid), one common scale (library proportions kept), built on the diagonal, large enough that the
+ * frame crops the back object, background objects tucked into free frame corners behind the scene.
+ */
 export function compose(input: ComposeInput, options: ComposeOptions = {}): ComposeResult {
   const { items, backgrounds, artboard, mode } = input;
   const zones = getZones(artboard, mode);
@@ -289,29 +274,24 @@ export function compose(input: ComposeInput, options: ComposeOptions = {}): Comp
 
   const zone = zones.artZone;
   const metas = items.map((it) => it.meta);
-  const dims = makeDims(metas, rotationsFor(metas, mode));
-  const links = options.echoTargets
-    ? targetEchoes(items, backgrounds, options.echoTargets)
-    : linkEchoes(items, backgrounds);
+  const dims = makeDims(metas, metas.map(() => 0));
   const stacking = normalizeStacking(options.stacking, items.length);
-  const fill = items.length === 1 ? SINGLE_FILL[mode] : FILL[mode];
   const dense = items.length > EXHAUSTIVE_MAX_ITEMS;
   const allowColumn = zone.width / zone.height <= 1;
 
   const arrangements = dense ? denseArrangements(dims) : candidateArrangements(dims, allowColumn);
-  const candidates = arrangements.map((arrangement) =>
-    evaluate(arrangement, dims, items, backgrounds, links, mode, zone, fill, stacking, !dense),
-  );
-  const best = pickCandidate(candidates, zone);
+  if (!dense) {
+    const surface = items.findIndex((it) => SURFACES.has(it.motif));
+    const resting = surface >= 0 ? onSurface(dims, surface) : null;
+    if (resting) arrangements.push(resting);
+  }
+  const candidates = arrangements.map((arrangement) => evaluate(arrangement, dims, items, zone, stacking, !dense));
+  const best = pickCandidate(candidates, zone, items.length);
 
-  const origin = placementOffset(best, zone, mode);
-  const poses: Pose[] = best.unit.map((u) => ({
-    x: origin.x + best.scale * u.x,
-    y: origin.y + best.scale * u.y,
-    rotation: u.rotation,
-    size: best.scale * u.size,
-  }));
-  if (mode === 'offset') keepVisible(poses, items, artboard);
+  const backIndex = items.length === 1 ? 0 : (byAreaDescending(dims)[0] as number);
+  const backIsSurface = SURFACES.has((items[backIndex] as ComposeItem).motif);
+  const bleed = dense ? 1 : items.length === 1 ? BLEED.single : backIsSurface ? BLEED.surface : BLEED.group;
+  const poses = fitScene(best, items, backIndex, zone, artboard, bleed);
 
   const boxes = poses.map((pose, i) => layerBounds(pose, (items[i] as ComposeItem).meta));
   const order = stacking ?? (dense ? denseZOrder(dims) : zOrder(dims, boxes, null));
@@ -320,13 +300,18 @@ export function compose(input: ComposeInput, options: ComposeOptions = {}): Comp
     return { motif: (items[i] as ComposeItem).motif, role: 'object', ...pose, rank: i };
   });
 
+  // Common scale of the scene: rendered size per source unit of height (identical for every object).
+  const first = items[0] as ComposeItem;
+  const scale = (poses[0] as Pose).size / Math.max(first.meta.bounds.height, 1e-9);
   const avoid = mode === 'title' ? zones.headlineZone : null;
-  const echoes: PlacedLayer[] = links.map((link) => {
-    const bg = backgrounds[link.background] as ComposeItem;
-    const obj = items[link.object] as ComposeItem;
-    const pose = placeEcho(poses[link.object] as Pose, obj.meta, bg.meta, link.order, mode, avoid);
-    return { motif: bg.motif, role: 'background', ...pose, rank: link.background };
+  const taken = new Set<string>();
+  const scenery: PlacedLayer[] = [];
+  backgrounds.forEach((bg, rank) => {
+    const placed = placeScenery(bg.meta, scale, boxes, artboard, avoid, taken);
+    if (!placed) return;
+    taken.add(placed.corner);
+    scenery.push({ motif: bg.motif, role: 'background', x: placed.x, y: placed.y, rotation: 0, size: placed.size, rank });
   });
 
-  return { ...zones, layers: [...echoes, ...objects] };
+  return { ...zones, layers: [...scenery, ...objects] };
 }

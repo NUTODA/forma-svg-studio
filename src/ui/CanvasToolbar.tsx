@@ -80,9 +80,8 @@ const DETAIL_OPTIONS: readonly RadioOption<Detail>[] = [
 ];
 
 const LAYOUT_OPTIONS: readonly RadioOption<LayoutMode>[] = [
-  { value: 'composed', label: 'По центру', title: 'Натюрморт по центру артборда' },
-  { value: 'offset', label: 'Со смещением', title: 'Группа у дальнего угла, свободное место напротив' },
-  { value: 'title', label: 'С заголовком', title: 'Место под заголовок и объекты рядом' },
+  { value: 'composed', label: 'Иллюстрация', title: 'Сцена на весь кадр, как в референсах' },
+  { value: 'title', label: 'С заголовком', title: 'Та же сцена с местом под заголовок' },
 ];
 
 const COLOR_OPTIONS: readonly RadioOption<ColorMode>[] = [
@@ -198,11 +197,11 @@ export function CanvasToolbar(): JSX.Element {
             type="button"
             className="seg__item"
             aria-pressed={doc.backgroundObjects}
-            title="Монохромные копии объектов позади"
+            title="Фоновый предмет: другой объект библиотеки в контурном варианте за сценой"
             onClick={() => api.setBackgroundObjects(!doc.backgroundObjects)}
           >
             <IconLayers />
-            <span>Эхо</span>
+            <span>Фон</span>
           </button>
           <button
             type="button"
