@@ -475,8 +475,11 @@ export function useEditor(): EditorApi {
         announce(firstProblemMessage(result) ?? emptyBriefMessage(mode, text), 'error');
         return false;
       }
+      // The first composition of an empty document gets the art-directed look (palette plane + echoes);
+      // later recompositions keep whatever the user chose.
+      const look = base.layers.length === 0 ? { showPlane: true, backgroundObjects: true } : {};
       const next = docFromMotifs(
-        { ...base, brief: { mode, text }, headline: headlineForBrief(mode, text) },
+        { ...base, ...look, brief: { mode, text }, headline: headlineForBrief(mode, text) },
         motifs,
         files,
       );

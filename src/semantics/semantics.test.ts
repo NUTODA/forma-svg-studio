@@ -115,10 +115,20 @@ describe('analyzeTitle', () => {
     expect(result.issues.some((i) => i.code === 'excluded')).toBe(true);
   });
 
+  it('understands «по крупицам» like «по кусочкам»: puzzle and book', () => {
+    for (const title of ['Знания по крупицам', 'Собирать опыт по крупицам']) {
+      const r = analyzeTitle(title, ALL);
+      expect(r.selected).toContain('puzzle');
+      expect(r.selected.length).toBeGreaterThanOrEqual(2);
+      expect(r.fallbackUsed).toBe(false);
+    }
+  });
+
   it('is honest about a weak match', () => {
     const result = analyzeTitle('Полезные навыки для работы', ALL);
     expect(result.matches[0]?.strength).toBe('weak');
-    expect(result.selected).toHaveLength(1);
+    // A weak guess is never shown alone: it gets a companion.
+    expect(result.selected).toHaveLength(2);
     expect(result.fallbackUsed).toBe(false);
     expect(result.issues.find((i) => i.code === 'weak-match')?.level).toBe('warning');
     expect(result.summary).toContain('слабое совпадение');

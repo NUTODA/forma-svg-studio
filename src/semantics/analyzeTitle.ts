@@ -354,6 +354,30 @@ export function analyzeTitle(
     }
     trimmed = Math.max(0, eligible.length - max);
     selected = eligible.slice(0, max).map((m) => m.motif);
+    // A single guessed object makes a poor illustration: add the best companion (never for strong, explicit matches) (a listed match, else a sibling from the hero's topic).
+    if (selected.length < 2 && max >= 2 && top.strength !== 'strong') {
+      const hero = selected[0] as MotifId;
+      const listed = matches.find((m) => m.motif !== hero && m.available && !excludedSet.has(m.motif));
+      let companion: MotifId | undefined = listed?.motif;
+      if (companion === undefined) {
+        const sibling = (Object.entries(THEME_BY_ID.get(PRIMARY_THEME[hero])?.motifs ?? {}) as [MotifId, number][])
+          .filter(([id]) => id !== hero && available.has(id) && !excludedSet.has(id))
+          .sort((a, b) => b[1] - a[1])[0];
+        companion = sibling?.[0];
+      }
+      if (companion !== undefined) {
+        selected.push(companion);
+        if (listed === undefined) {
+          matches.push({
+            motif: companion,
+            score: 0,
+            strength: 'weak',
+            reasons: [reason('theme', '', `Дополняет «${name(hero)}» по теме`)],
+            available: true,
+          });
+        }
+      }
+    }
   } else {
     const neutral = FALLBACK_ORDER.find((id) => available.has(id)) ?? MOTIF_IDS.find((id) => available.has(id));
     if (neutral !== undefined) {
