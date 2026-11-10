@@ -2,7 +2,7 @@ import { useId } from 'react';
 import type { ChangeEvent, JSX, KeyboardEvent } from 'react';
 import { AnalysisView } from './AnalysisView';
 import { DemoList } from './DemoList';
-import { IconSparkle } from './icons';
+import { IconSparkle, IconSpinner } from './icons';
 import { hasErrorIssue, isMacPlatform, runShortcutHint } from './briefFormat';
 import { useEditorApi } from './state/editorContext';
 import './BriefPanel.css';
@@ -77,7 +77,7 @@ export function BriefPanel(): JSX.Element {
         </div>
 
         <button type="button" className="btn btn--primary btn--block brief__run" disabled={blank || api.briefBusy} aria-busy={api.briefBusy || undefined} onClick={run}>
-          <IconSparkle />
+          {api.briefBusy ? <IconSpinner className="spin" /> : <IconSparkle />}
           <span className="brief__run-label">{api.briefBusy ? 'Подбираем объекты…' : 'Собрать композицию'}</span>
           <kbd className="kbd brief__kbd" aria-hidden="true">
             {runShortcutHint(mac)}

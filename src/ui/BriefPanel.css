@@ -57,3 +57,14 @@
     display: none;
   }
 }
+
+/* Only the real wait for the model spins; reduced motion stops it (tokens.css) and the label still says so. */
+.spin {
+  animation: brief-spin 0.9s linear infinite;
+}
+
+@keyframes brief-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

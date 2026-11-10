@@ -380,4 +380,15 @@ describe('BriefPanel', () => {
   it('includes the demo list', () => {
     expect(render(fakeApi(), BriefPanel)).toContain('Примеры');
   });
+
+  it('spins only while the model is actually being asked', () => {
+    const idle = render(fakeApi({ text: 'книга, 2 монеты' }), BriefPanel);
+    expect(idle).toContain('Собрать композицию');
+    expect(idle).not.toContain('class="spin"');
+    expect(idle).not.toContain('aria-busy');
+    const busy = render({ ...fakeApi({ text: 'Как копить на поездку' }), briefBusy: true }, BriefPanel);
+    expect(busy).toContain('Подбираем объекты…');
+    expect(busy).toContain('class="spin"');
+    expect(busy).toContain('aria-busy="true"');
+  });
 });

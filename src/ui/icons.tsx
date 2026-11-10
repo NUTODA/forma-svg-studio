@@ -139,10 +139,18 @@ export const IconRefresh = (p: IconProps) => (
   </Icon>
 );
 
+// A four-point sparkle with a small companion star. The old eight-ray glyph read as a loading spinner.
 export const IconSparkle = (p: IconProps) => (
   <Icon {...p}>
-    <path d="M8 2v3M8 11v3M2 8h3M11 8h3" />
-    <path d="m4 4 1.5 1.5M10.5 10.5 12 12M12 4l-1.5 1.5M5.5 10.5 4 12" />
+    <path d="M7 2.5c.4 2.6 1.4 3.6 4 4-2.6.4-3.6 1.4-4 4-.4-2.6-1.4-3.6-4-4 2.6-.4 3.6-1.4 4-4Z" />
+    <path d="M12.5 10c.2 1.1.7 1.6 1.8 1.8-1.1.2-1.6.7-1.8 1.8-.2-1.1-.7-1.6-1.8-1.8 1.1-.2 1.6-.7 1.8-1.8Z" />
+  </Icon>
+);
+
+/** Busy indicator: an open ring that the stylesheet rotates (`.spin`). */
+export const IconSpinner = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 2.25a5.75 5.75 0 1 1-5.75 5.75" />
   </Icon>
 );
 
